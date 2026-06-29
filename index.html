@@ -256,7 +256,7 @@
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Keeps each shift length; re-times starts to your targets, max 1h30 gap, first clock-in at 4 AM.</span>
+      <span class="empty" style="font-style:normal">Floor staff: hit targets, max 1h30 gap, first in at 4 AM. DMs: 7/8 AM morning, last DM afternoon→close.</span>
     </div>
   </section>
   <section>
@@ -668,32 +668,46 @@ function showView(v){
   if(location.hash.slice(1)!==v) location.hash = v;
 }
 
-/* ---- Optimizer: keep each shift length, re-time starts to hit clock-in targets
-   with no gap > MAXGAP between consecutive clock-ins. Store opens at OPEN. ---- */
-const OPEN = 4, MAXGAP = 1.5;
+/* ---- Optimizer ----
+   Floor staff: keep each shift length, re-time starts to hit clock-in targets, no gap > MAXGAP.
+   DMs are placed separately: never before DM_MIN; one morning, the last one afternoon (ends at CLOSE). */
+const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22;
 let preOptimize = null;
 function optimizeStarts(){
   const day = cur();
-  const idx=[], starts=[], lens=[];
+  const all=[];
   day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
-    if(a!=null && b!=null && b>a){ idx.push(i); starts.push(a); lens.push(b-a); } });
-  const n = idx.length;
-  if(n<2){ alert("Need at least 2 valid shifts to optimize."); return; }
+    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm }); });
+  if(all.length<2){ alert("Need at least 2 valid shifts to optimize."); return; }
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
-  // build target start-slots from the per-hour clock-in demand
-  const dem = state.demand || {};
-  let slots = [];
-  Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
-        .forEach(h=>{ for(let j=0;j<dem[h];j++) slots.push(h); });   // all on the hour (no within-hour stagger)
-  slots = slots.filter(t=>t>=OPEN).sort((a,b)=>a-b);
-  if(slots.length>n) slots = slots.slice(0,n);                 // more demand than people: take earliest
-  while(slots.length<n){ const last=slots.length?slots[slots.length-1]:OPEN; slots.push(Math.min(last+MAXGAP,21.5)); }
-  slots.sort((a,b)=>a-b); slots[0]=OPEN;                       // first clock-in at open
-  for(let i=1;i<n;i++){ if(slots[i]-slots[i-1]>MAXGAP) slots[i]=slots[i-1]+MAXGAP; if(slots[i]<slots[i-1]) slots[i]=slots[i-1]; }
-  slots = slots.map(snap);
-  const order = [...Array(n).keys()].sort((a,b)=> starts[a]-starts[b]);  // keep early people early
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
-  order.forEach((p,rank)=>{ const i=idx[p]; day.shifts[i].start=fmt(slots[rank]); day.shifts[i].end=fmt(slots[rank]+lens[p]); });
+
+  // ---- floor staff (non-DM): fill the clock-in demand, cap gaps ----
+  const floor = all.filter(p=>!p.dm).sort((a,b)=> a.start-b.start);
+  const n = floor.length;
+  if(n){
+    const dem = state.demand || {};
+    let slots = [];
+    Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
+          .forEach(h=>{ for(let j=0;j<dem[h];j++) slots.push(h); });   // full count on the hour
+    slots = slots.filter(t=>t>=OPEN).sort((a,b)=>a-b);
+    if(slots.length>n) slots = slots.slice(0,n);
+    while(slots.length<n){ const last=slots.length?slots[slots.length-1]:OPEN; slots.push(Math.min(last+MAXGAP,21.5)); }
+    slots.sort((a,b)=>a-b); slots[0]=OPEN;
+    for(let i=1;i<n;i++){ if(slots[i]-slots[i-1]>MAXGAP) slots[i]=slots[i-1]+MAXGAP; if(slots[i]<slots[i-1]) slots[i]=slots[i-1]; }
+    slots = slots.map(snap);
+    floor.forEach((p,k)=>{ day.shifts[p.i].start=fmt(slots[k]); day.shifts[p.i].end=fmt(slots[k]+p.len); });
+  }
+
+  // ---- DMs: 7/8am morning, last one afternoon (ends at close) so coverage runs open→close ----
+  const dms = all.filter(p=>p.dm).sort((a,b)=> a.start-b.start);
+  dms.forEach((p,k)=>{
+    const ns = (dms.length>=2 && k===dms.length-1)
+      ? snap(Math.max(DM_MIN, CLOSE - p.len))   // afternoon DM ends at close
+      : Math.min(DM_MIN + k, 8);                // morning DM(s): 7am, then 8am
+    day.shifts[p.i].start=fmt(ns); day.shifts[p.i].end=fmt(ns+p.len);
+  });
+
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
 }
