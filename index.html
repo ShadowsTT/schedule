@@ -27,7 +27,16 @@
   .edit input:hover { border-color:var(--line); }
   .edit input:focus { border-color:var(--accent); background:#fff; outline:none; }
   .edit td.t input { width:110px; }
+  tbody tr:hover { background:#eef4ff; }
   .name { font-weight:600; }
+  /* readable grid */
+  .grid th.c, .grid td.c { text-align:center; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .grid td.muted { color:var(--muted); }
+  .grid td.brk { color:#0f766e; font-weight:500; }
+  .grid td.lunchcell { color:#c2410c; font-weight:600; background:rgba(255,237,213,.5); }
+  .grid thead th { background:#f8fafc; border-bottom:2px solid var(--line); }
+  .grid td, .grid th { border-right:1px solid #f0f2f5; }
+  .grid td:last-child, .grid th:last-child { border-right:0; }
   .pill { display:inline-block; background:var(--accent-soft); color:var(--accent);
           padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; }
   .slots span { display:inline-block; background:#f1f5f9; border:1px solid var(--line);
@@ -78,7 +87,11 @@
 
   <section>
     <h2>Shifts, breaks &amp; dispensing</h2>
-    <table><thead><tr><th>Associate</th><th>Start</th><th>End</th><th>Breaks</th><th>Dispensing hours</th></tr></thead>
+    <table class="grid"><thead><tr>
+      <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
+      <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
+      <th>Dispensing hours</th>
+    </tr></thead>
     <tbody id="shiftBody"></tbody></table>
   </section>
 
@@ -200,11 +213,22 @@ function renderEditor(){
 
 function renderReport(){
   const { people, timeline } = compute();
-  document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>`
-    <tr><td class="name">${p.name}</td><td>${fmt(p.start)}</td><td>${fmt(p.end)}</td>
-    <td class="slots">${p.breaks.length?p.breaks.map(b=>`<span class="${b.label==='Lunch'?'lunch':''}">${b.label[0]} ${fmt(b.start)}–${fmt(b.end)}</span>`).join(""):'<span class="empty">—</span>'}</td>
-    <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):'<span class="empty">—</span>'}</td></tr>`).join("")
-    : `<tr><td colspan="5" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+  const dash = '<span class="empty">—</span>';
+  const rng = b => b ? `${fmt(b.start)}–${fmt(b.end)}` : dash;
+  document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>{
+    const brks = p.breaks.filter(b=>b.label==="Break");
+    const lunch = p.breaks.find(b=>b.label==="Lunch");
+    const hrs = (p.end-p.start);
+    return `<tr>
+      <td class="name">${p.name}</td>
+      <td class="c">${fmt(p.start)}</td><td class="c">${fmt(p.end)}</td>
+      <td class="c muted">${(Math.round(hrs*4)/4).toString().replace(/\.5$/,"½").replace(/\.25$/,"¼").replace(/\.75$/,"¾")}h</td>
+      <td class="c brk">${rng(brks[0])}</td>
+      <td class="c lunchcell">${rng(lunch)}</td>
+      <td class="c brk">${rng(brks[1])}</td>
+      <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash}</td>
+    </tr>`;}).join("")
+    : `<tr><td colspan="8" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
   document.getElementById("timeBody").innerHTML = timeline.map(t=>`
     <tr><td>${slot(t.h)}</td>
     <td>${t.who?`<span class="pill">${t.who.name}</span>`:(t.others.length?'<span class="empty">all present on break</span>':'<span class="empty">no one scheduled</span>')}</td>
