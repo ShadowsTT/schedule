@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shift &amp; Dispensing Dashboard</title>
+<style>
+  :root { --ink:#1f2933; --muted:#7b8794; --line:#e4e7eb; --accent:#2563eb; --accent-soft:#eff4ff; --band:#f8fafc; --danger:#dc2626; }
+  * { box-sizing:border-box; }
+  body { font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--ink);
+         margin:0; padding:28px; background:#f1f5f9; }
+  .page { max-width:920px; margin:0 auto; background:#fff; border-radius:14px; overflow:hidden;
+          box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06); }
+  header { background:linear-gradient(135deg,#1e3a8a,#2563eb); color:#fff; padding:24px 32px; }
+  header h1 { margin:0; font-size:21px; }
+  header input.date { margin-top:8px; font-size:14px; background:rgba(255,255,255,.15); border:0;
+        color:#fff; padding:6px 10px; border-radius:6px; width:340px; }
+  header input.date::placeholder { color:rgba(255,255,255,.7); }
+  section { padding:22px 32px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 12px;
+       display:flex; align-items:center; gap:10px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  tbody tr:nth-child(even) { background:var(--band); }
+  .edit input { border:1px solid transparent; background:transparent; font:inherit; color:inherit;
+        padding:5px 7px; border-radius:6px; width:100%; }
+  .edit input:hover { border-color:var(--line); }
+  .edit input:focus { border-color:var(--accent); background:#fff; outline:none; }
+  .edit td.t input { width:110px; }
+  .name { font-weight:600; }
+  .pill { display:inline-block; background:var(--accent-soft); color:var(--accent);
+          padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; }
+  .slots span { display:inline-block; background:#f1f5f9; border:1px solid var(--line);
+          border-radius:6px; padding:2px 7px; margin:2px 4px 2px 0; font-size:12px; font-variant-numeric:tabular-nums; }
+  .timeline td:first-child { font-variant-numeric:tabular-nums; color:var(--muted); width:130px; }
+  .empty { color:var(--muted); font-style:italic; }
+  .err { color:var(--danger); font-size:12px; }
+  button { font:inherit; border:0; border-radius:7px; padding:7px 14px; cursor:pointer; font-weight:600; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-ghost { background:#eef2f7; color:var(--ink); }
+  .btn-x { background:transparent; color:var(--danger); padding:4px 8px; font-size:16px; line-height:1; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; padding:0 32px 22px; }
+  .saved { color:#16a34a; font-size:12px; font-weight:600; align-self:center; opacity:0; transition:opacity .3s; }
+  .saved.show { opacity:1; }
+  footer { padding:14px 32px 24px; color:var(--muted); font-size:12px; }
+  @media print {
+    body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;}
+    .toolbar,.btn-x,.col-actions{display:none!important;}
+    .edit input{border:0!important;background:transparent!important;}
+    header input.date{background:transparent;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Shift &amp; Dispensing Dashboard</h1>
+    <input class="date" id="reportDate" placeholder="Report date / workgroup">
+  </header>
+
+  <section>
+    <h2>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
+    <table>
+      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="col-actions"></th></tr></thead>
+      <tbody id="editBody"></tbody>
+    </table>
+  </section>
+
+  <div class="toolbar">
+    <button class="btn-ghost" id="addBtn">+ Add associate</button>
+    <button class="btn-primary" id="saveBtn">Save</button>
+    <button class="btn-ghost" onclick="window.print()">Print / PDF</button>
+    <button class="btn-ghost" id="resetBtn">Reset to defaults</button>
+    <span class="saved" id="savedMsg">Saved ✓</span>
+  </div>
+
+  <section>
+    <h2>Dispensing hours per associate</h2>
+    <table><thead><tr><th>Associate</th><th>Start</th><th>End</th><th>Dispensing hours</th></tr></thead>
+    <tbody id="shiftBody"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Dispensing rotation (hour by hour)</h2>
+    <table class="timeline"><thead><tr><th>Hour</th><th>On dispensing</th><th>Also present</th></tr></thead>
+    <tbody id="timeBody"></tbody></table>
+  </section>
+
+  <footer>Round-robin, earliest clock-in first — each hour goes to whoever present has dispensed least so far.
+  Sub-hour starts round up to the next whole dispensing hour. Changes save to this browser.</footer>
+</div>
+
+<script>
+const DEFAULTS = {
+  date: "Saturday, 27 June 2026 · OMNI FOM",
+  shifts: [
+    { name:"DAWN.W 5708",          start:"4:00am",  end:"12:30pm" },
+    { name:"GABRIELLE.F 9750",     start:"4:00am",  end:"12:30pm" },
+    { name:"ANJALI.J 3450",        start:"5:00am",  end:"1:30pm"  },
+    { name:"ANGELA.J 5650",        start:"5:00am",  end:"1:30pm"  },
+    { name:"CHRISTINA.M 8609",     start:"6:00am",  end:"2:15pm"  },
+    { name:"AUSTIN.B 1256",        start:"7:00am",  end:"1:00pm"  },
+    { name:"LIAM.F 7047",          start:"8:00am",  end:"2:30pm"  },
+    { name:"GURSHARANDEEP.S 9488", start:"9:00am",  end:"3:30pm"  },
+    { name:"ROBBIN.E 3659",        start:"9:00am",  end:"5:30pm"  },
+    { name:"ANNIKA.N 2226",        start:"10:45am", end:"7:15pm"  },
+    { name:"RYAN.J 6547",          start:"11:00am", end:"5:30pm"  },
+    { name:"HAYDEN.S 4020",        start:"1:30pm",  end:"10:00pm" },
+    { name:"COLIN.F 6428",         start:"2:00pm",  end:"8:30pm"  },
+    { name:"TIFFANY.E 4918",       start:"2:00pm",  end:"8:30pm"  },
+  ]
+};
+const KEY = "scheduleDashboard";
+
+let state = load();
+function load(){
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.shifts) return s; } catch(e){}
+  return structuredClone(DEFAULTS);
+}
+function save(){
+  localStorage.setItem(KEY, JSON.stringify(state));
+  const m = document.getElementById("savedMsg"); m.classList.add("show");
+  setTimeout(()=>m.classList.remove("show"), 1500);
+}
+
+function parseTime(s){
+  s = String(s).trim().toLowerCase().replace(/\s+/g,"");
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)?$/);
+  if(!m) return null;
+  let h=+m[1]; const min=m[2]?+m[2]:0, ap=m[3];
+  if(h>23||min>59) return null;
+  if(ap==="am"){ if(h===12) h=0; } else if(ap==="pm"){ if(h!==12) h+=12; }
+  return h + min/60;
+}
+const fmt = h => { h=((h%24)+24)%24; let hr=Math.floor(h); const mn=Math.round((h-hr)*60);
+  const ap=hr<12?"AM":"PM"; let d=hr%12; if(d===0)d=12;
+  return d+(mn?":"+String(mn).padStart(2,"0"):"")+" "+ap; };
+const slot = h => fmt(h)+"–"+fmt(h+1);
+
+function compute(){
+  const people = state.shifts.map(s=>({ name:s.name||"(unnamed)",
+        start:parseTime(s.start), end:parseTime(s.end), disp:0, slots:[] }))
+    .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
+  if(!people.length) return { people:[], timeline:[] };
+  const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
+  const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
+  const timeline = [];
+  for(let h=dayStart; h<dayEnd; h++){
+    const present = people.filter(p=>p.start<=h && p.end>h);
+    if(!present.length){ timeline.push({h,who:null,others:[]}); continue; }
+    present.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
+    const on=present[0]; on.disp++; on.slots.push(slot(h));
+    timeline.push({h, who:on, others:present.slice(1)});
+  }
+  return { people, timeline };
+}
+
+function renderEditor(){
+  document.getElementById("reportDate").value = state.date;
+  document.getElementById("editBody").innerHTML = state.shifts.map((s,i)=>`
+    <tr class="edit">
+      <td><input data-i="${i}" data-k="name" value="${(s.name||"").replace(/"/g,'&quot;')}" placeholder="Name"></td>
+      <td class="t"><input data-i="${i}" data-k="start" value="${s.start||""}" placeholder="4:00am"></td>
+      <td class="t"><input data-i="${i}" data-k="end" value="${s.end||""}" placeholder="12:30pm"></td>
+      <td class="col-actions"><button class="btn-x" data-del="${i}" title="Remove">✕</button></td>
+    </tr>`).join("");
+}
+
+function renderReport(){
+  const { people, timeline } = compute();
+  document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>`
+    <tr><td class="name">${p.name}</td><td>${fmt(p.start)}</td><td>${fmt(p.end)}</td>
+    <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):'<span class="empty">—</span>'}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+  document.getElementById("timeBody").innerHTML = timeline.map(t=>`
+    <tr><td>${slot(t.h)}</td>
+    <td>${t.who?`<span class="pill">${t.who.name}</span>`:'<span class="empty">no one scheduled</span>'}</td>
+    <td>${t.others.map(o=>o.name).join(", ")||'<span class="empty">—</span>'}</td></tr>`).join("");
+}
+
+function renderAll(){ renderEditor(); renderReport(); }
+
+// events
+document.getElementById("editBody").addEventListener("input", e=>{
+  const i=e.target.dataset.i, k=e.target.dataset.k;
+  if(i==null) return;
+  state.shifts[i][k] = e.target.value;
+  renderReport();
+});
+document.getElementById("editBody").addEventListener("click", e=>{
+  const d=e.target.dataset.del;
+  if(d==null) return;
+  state.shifts.splice(+d,1); renderAll();
+});
+document.getElementById("reportDate").addEventListener("input", e=>{ state.date=e.target.value; });
+document.getElementById("addBtn").addEventListener("click", ()=>{
+  state.shifts.push({name:"",start:"",end:""}); renderAll();
+  const inputs=document.querySelectorAll('#editBody input[data-k="name"]');
+  inputs[inputs.length-1].focus();
+});
+document.getElementById("saveBtn").addEventListener("click", save);
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  if(confirm("Reset to the original schedule? Your edits will be lost.")){
+    state=structuredClone(DEFAULTS); save(); renderAll();
+  }
+});
+
+renderAll();
+</script>
+</body>
+</html>
