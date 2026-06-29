@@ -109,7 +109,7 @@
   }
   @media print {
     body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;}
-    .toolbar,.btn-x,.col-actions{display:none!important;}
+    .toolbar,.btn-x,.col-actions,.screen-only,footer{display:none!important;}
     .edit input{border:0!important;background:transparent!important;box-shadow:none!important;}
     header input.date{background:transparent;border:0;}
     .pill{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -128,7 +128,7 @@
     <div class="stats" id="stats"></div>
   </header>
 
-  <section>
+  <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
       <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="col-actions"></th></tr></thead>
@@ -159,7 +159,7 @@
     <tbody id="shiftBody"></tbody></table></div>
   </section>
 
-  <section>
+  <section class="screen-only">
     <h2><span class="ico">🔄</span>Dispensing rotation (hour by hour)</h2>
     <div class="legend">
       <span><i class="sw disp"></i>Dispensing</span>
