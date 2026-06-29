@@ -57,6 +57,30 @@
   .slots span { display:inline-block; background:#eef2ff; border:1px solid #dbe3ff; color:#3b50c0;
           border-radius:7px; padding:3px 8px; margin:2px 4px 2px 0; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
   .onbreak { color:var(--muted); font-style:italic; }
+  /* gantt timeline grid */
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:12px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .legend .sw { width:13px; height:13px; border-radius:4px; display:inline-block; border:1px solid rgba(0,0,0,.06); }
+  .sw.disp { background:linear-gradient(135deg,#2563eb,#3b82f6); }
+  .sw.work { background:#dbe3ff; }
+  .sw.brkc { background:#99f6e4; }
+  .sw.lunchc { background:#fed7aa; }
+  .sw.offc { background:#f1f5f9; }
+  .gridscroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
+  .gantt { border-collapse:separate; border-spacing:0; font-size:11px; width:100%; }
+  .gantt th, .gantt td { border:0; border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; padding:0; }
+  .gantt thead th { background:#f8fafc; color:var(--muted); font-weight:700; text-align:center; height:30px;
+        font-variant-numeric:tabular-nums; position:sticky; top:0; }
+  .gantt .rowname { position:sticky; left:0; z-index:2; background:#fff; text-align:left; padding:0 12px;
+        font-weight:600; white-space:nowrap; min-width:160px; font-size:13px; box-shadow:1px 0 0 var(--line); }
+  .gantt thead .rowname { z-index:3; background:#f8fafc; }
+  .gantt tbody tr:nth-child(even) .rowname { background:#fbfcfe; }
+  .gantt td.cell { width:34px; min-width:34px; height:30px; text-align:center; color:#fff; font-weight:700; }
+  .gantt td.off  { background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 4px,#f1f5f9 4px,#f1f5f9 8px); }
+  .gantt td.work { background:#dbe3ff; }
+  .gantt td.brk  { background:#5eead4; color:#0f766e; }
+  .gantt td.lunch{ background:#fdba74; color:#7c2d12; }
+  .gantt td.disp { background:linear-gradient(135deg,#2563eb,#3b82f6); box-shadow:inset 0 0 0 1px rgba(255,255,255,.25); }
   .timeline td:first-child { font-variant-numeric:tabular-nums; color:var(--muted); width:140px; font-weight:600; }
   .empty { color:#9aa6b2; font-style:italic; }
   .err { color:var(--danger); font-size:12px; }
@@ -79,6 +103,8 @@
     header input.date{background:transparent;border:0;}
     .pill{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     header,.stat,.pill,.lunchcell{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .gridscroll{overflow:visible;} .gantt{font-size:10px;}
+    .gantt td.cell,.gantt td.off,.gantt td.work,.gantt td.brk,.gantt td.lunch,.gantt td.disp{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
 </style>
 </head>
@@ -119,8 +145,14 @@
 
   <section>
     <h2><span class="ico">🔄</span>Dispensing rotation (hour by hour)</h2>
-    <table class="timeline"><thead><tr><th>Hour</th><th>On dispensing</th><th>Also present</th></tr></thead>
-    <tbody id="timeBody"></tbody></table>
+    <div class="legend">
+      <span><i class="sw disp"></i>Dispensing</span>
+      <span><i class="sw work"></i>Working</span>
+      <span><i class="sw brkc"></i>Break</span>
+      <span><i class="sw lunchc"></i>Lunch</span>
+      <span><i class="sw offc"></i>Off</span>
+    </div>
+    <div class="gridscroll"><table class="gantt" id="gantt"></table></div>
   </section>
 
   <footer>Round-robin, earliest clock-in first — each hour goes to whoever present has dispensed least so far.
@@ -173,6 +205,7 @@ const fmt = h => { h=((h%24)+24)%24; let hr=Math.floor(h); const mn=Math.round((
   const ap=hr<12?"AM":"PM"; let d=hr%12; if(d===0)d=12;
   return d+(mn?":"+String(mn).padStart(2,"0"):"")+" "+ap; };
 const slot = h => fmt(h)+"–"+fmt(h+1);
+const compactH = h => { const hh=((h%24)+24)%24; let d=hh%12; if(d===0)d=12; return d+(hh<12?"a":"p"); };
 
 /* ---- Break policy (edit these numbers to match your store) ----
    Tiered by hours worked. Lunch = 60 min, breaks = 15 min.        */
@@ -264,10 +297,23 @@ function renderReport(){
       <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash}</td>
     </tr>`;}).join("")
     : `<tr><td colspan="8" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
-  document.getElementById("timeBody").innerHTML = timeline.map(t=>`
-    <tr><td>${slot(t.h)}</td>
-    <td>${t.who?`<span class="pill">${t.who.name}</span>`:(t.others.length?'<span class="empty">all present on break</span>':'<span class="empty">no one scheduled</span>')}</td>
-    <td>${t.others.map(o=>o.brk?`<span class="onbreak">${o.name} (break)</span>`:o.name).join(", ")||'<span class="empty">—</span>'}</td></tr>`).join("");
+  // ---- gantt timeline grid: associates × hours ----
+  const g = document.getElementById("gantt");
+  if(!people.length){ g.innerHTML = `<tr><td class="empty" style="padding:14px">Add associates to see the timeline.</td></tr>`; return; }
+  const hours = timeline.map(t=>t.h);
+  const head = `<thead><tr><th class="rowname">Associate</th>${hours.map(h=>`<th>${compactH(h)}</th>`).join("")}</tr></thead>`;
+  const body = people.map(p=>{
+    const cells = timeline.map(t=>{
+      const h=t.h;
+      if(!(p.start<=h && p.end>h)) return `<td class="cell off"></td>`;
+      if(t.who===p)                return `<td class="cell disp" title="Dispensing ${slot(h)}">•</td>`;
+      if(p.breaks.some(b=>b.label==="Lunch"&&overlapsHour(b,h))) return `<td class="cell lunch" title="Lunch">L</td>`;
+      if(p.breaks.some(b=>overlapsHour(b,h)))                    return `<td class="cell brk" title="Break">B</td>`;
+      return `<td class="cell work"></td>`;
+    }).join("");
+    return `<tr><td class="rowname">${p.name}</td>${cells}</tr>`;
+  }).join("");
+  g.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
 function renderAll(){ renderEditor(); renderReport(); }
