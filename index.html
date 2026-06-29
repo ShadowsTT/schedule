@@ -221,7 +221,8 @@ function renderReport(){
   document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>{
     const brks = p.breaks.filter(b=>b.label==="Break");
     const lunch = p.breaks.find(b=>b.label==="Lunch");
-    const hrs = (p.end-p.start);
+    const lunchHrs = lunch ? (lunch.end-lunch.start) : 0;
+    const hrs = (p.end-p.start) - lunchHrs;   // paid hours: lunch is unpaid
     return `<tr>
       <td class="name">${p.name}</td>
       <td class="c">${fmt(p.start)}</td><td class="c">${fmt(p.end)}</td>
