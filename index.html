@@ -154,9 +154,9 @@ const slot = h => fmt(h)+"–"+fmt(h+1);
 
 /* ---- Break policy (edit these numbers to match your store) ----
    Tiered by hours worked. Lunch = 60 min, breaks = 15 min.        */
-const LUNCH = 1.0, BRK = 0.25;
+const LUNCH = 1.0, BRK = 0.25, STAGGER = 1.0;  // offset per same-start associate
 const snap = x => Math.round(x*4)/4;           // snap to 15-min grid
-function makeBreaks(start, end){
+function makeBreaks(start, end, offset=0){
   const L = end - start;
   let plan;
   if(L < 6)      plan = [{label:"Break", at:0.50, len:BRK}];
@@ -166,7 +166,7 @@ function makeBreaks(start, end){
                          {label:"Lunch", at:0.50, len:LUNCH},
                          {label:"Break", at:0.75, len:BRK}];
   return plan.map(p=>{
-    let bs = snap(start + L*p.at - p.len/2);    // centre on the target point
+    let bs = snap(start + L*p.at - p.len/2 + offset);  // centre on target, shifted to split partners
     bs = Math.max(start+0.25, Math.min(bs, end - p.len - 0.25)); // keep inside shift
     return { label:p.label, start:bs, end:bs+p.len };
   });
@@ -174,9 +174,12 @@ function makeBreaks(start, end){
 
 const overlapsHour = (b,h) => b.start < h+1 && b.end > h;  // break touches [h,h+1)
 function compute(){
+  const seen = {};  // count associates already placed at each start time -> stagger their breaks
   const people = state.shifts.map(s=>{
         const start=parseTime(s.start), end=parseTime(s.end);
-        const breaks = (start!=null&&end!=null&&end>start) ? makeBreaks(start,end) : [];
+        const ok = start!=null&&end!=null&&end>start;
+        const idx = ok ? (seen[start]=(seen[start]||0)+1)-1 : 0;
+        const breaks = ok ? makeBreaks(start,end, idx*STAGGER) : [];
         return { name:s.name||"(unnamed)", start, end, breaks, disp:0, slots:[] };
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
