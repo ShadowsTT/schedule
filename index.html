@@ -76,6 +76,18 @@
   .sw.brkc { background:#99f6e4; }
   .sw.lunchc { background:#fed7aa; }
   .sw.offc { background:#f1f5f9; }
+  .sw.met { background:#dcfce7; } .sw.under { background:#fee2e2; } .sw.over { background:#fef3c7; }
+  .cov { border-collapse:separate; border-spacing:0; font-size:11px; }
+  .cov th, .cov td { border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; text-align:center; width:46px; min-width:46px; padding:3px; }
+  .cov thead th { background:#f8fafc; color:var(--muted); font-weight:700; font-variant-numeric:tabular-nums; }
+  .cov .rowname { position:sticky; left:0; z-index:2; background:#fff; text-align:left; padding:0 12px; font-weight:600; white-space:nowrap; min-width:120px; box-shadow:1px 0 0 var(--line); }
+  .cov thead .rowname { background:#f8fafc; }
+  .cov .dem { width:38px; border:1px solid var(--line); border-radius:5px; padding:3px; text-align:center; font:inherit; font-size:11px; }
+  .cov .dem:focus { border-color:var(--accent); outline:none; }
+  .cov td.covcell { font-weight:700; font-variant-numeric:tabular-nums; }
+  .cov td.covcell.under { background:#fee2e2; color:#b91c1c; }
+  .cov td.covcell.over  { background:#fef3c7; color:#92400e; }
+  .cov td.covcell.met   { background:#dcfce7; color:#166534; }
   .gridscroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
   .gantt { border-collapse:separate; border-spacing:0; font-size:11px; width:100%; }
   .gantt th, .gantt td { border:0; border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; padding:0; }
@@ -200,6 +212,17 @@
       <th>Dispensing</th><th>Tasks</th><th>Notes</th>
     </tr></thead>
     <tbody id="shiftBody"></tbody></table></div>
+  </section>
+
+  <section class="screen-only">
+    <h2><span class="ico">🎯</span>Clock-in coverage — target vs scheduled (per hour, this day)</h2>
+    <div class="legend">
+      <span><i class="sw met"></i>Target met</span>
+      <span><i class="sw under"></i>Under (need more)</span>
+      <span><i class="sw over"></i>Over</span>
+      <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
+    </div>
+    <div class="gridscroll"><table class="cov" id="cov"></table></div>
   </section>
 
   <section class="screen-only">
@@ -334,7 +357,7 @@ const SEED_DAYS = [
 ];
 const KEY = "scheduleDashboard_v3";
 
-const freshState = () => ({ v:2, active:0, days: structuredClone(SEED_DAYS) });
+const freshState = () => ({ v:2, active:0, demand:{}, days: structuredClone(SEED_DAYS) });
 let state = load();
 function load(){
   try {
@@ -557,6 +580,29 @@ function renderReport(){
     return `<tr><td class="rowname">${p.name}</td>${cells}</tr>`;
   }).join("");
   g.innerHTML = head + `<tbody>${body}</tbody>`;
+  renderCoverage();
+}
+
+const COV_HRS = (()=>{ const a=[]; for(let h=4;h<=21;h++) a.push(h); return a; })();  // 4am–9pm
+function schedStarts(){
+  const c={}; cur().shifts.forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); c[h]=(c[h]||0)+1; } });
+  return c;
+}
+function covCell(h, starts){
+  const sc = starts[h]||0; const t = (state.demand||{})[h];
+  let cls=""; if(t!=null && t!==""){ const n=+t; cls = sc<n?"under" : sc>n?"over" : "met"; }
+  return `<td class="covcell ${cls}">${sc}</td>`;
+}
+function renderCoverage(){
+  const starts = schedStarts(); const dem = state.demand||{};
+  const head = `<thead><tr><th class="rowname">Hour</th>${COV_HRS.map(h=>`<th>${compactH(h)}</th>`).join("")}</tr></thead>`;
+  const tRow = `<tr><td class="rowname">Target in</td>${COV_HRS.map(h=>`<td><input class="dem" type="number" min="0" data-h="${h}" value="${dem[h]??""}" placeholder="–"></td>`).join("")}</tr>`;
+  const sRow = `<tr id="covSched"><td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}</tr>`;
+  document.getElementById("cov").innerHTML = head + `<tbody>${tRow}${sRow}</tbody>`;
+}
+function refreshSched(){
+  const starts = schedStarts();
+  document.getElementById("covSched").innerHTML = `<td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}`;
 }
 
 function renderDays(){
@@ -577,6 +623,13 @@ document.getElementById("shiftBody").addEventListener("input", e=>{
   const oi=e.target.dataset.oi;
   if(oi==null) return;
   cur().shifts[oi].note = e.target.value;   // saved on next Save; no re-render so focus stays
+});
+document.getElementById("cov").addEventListener("input", e=>{
+  const h=e.target.dataset.h;
+  if(h==null) return;
+  state.demand = state.demand || {};        // demand is store-wide (same every day)
+  if(e.target.value==="") delete state.demand[h]; else state.demand[h] = +e.target.value;
+  refreshSched();                            // recolor without rebuilding the inputs (keeps focus)
 });
 document.getElementById("editBody").addEventListener("click", e=>{
   const d=e.target.dataset.del;
