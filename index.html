@@ -54,6 +54,9 @@
   .pill { display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#2563eb,#3b82f6); color:#fff;
           padding:4px 12px; border-radius:99px; font-size:12.5px; font-weight:600; box-shadow:0 1px 2px rgba(37,99,235,.35); }
   .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:#bfdbfe; }
+  .tablescroll { overflow-x:auto; }
+  .grid td, .grid th { white-space:nowrap; }
+  .grid td.name { white-space:normal; }
   .slots { min-width:96px; }
   .slots span { display:inline-block; white-space:nowrap; background:#eef2ff; border:1px solid #dbe3ff; color:#3b50c0;
           border-radius:7px; padding:3px 9px; margin:2px 4px 2px 0; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
@@ -142,12 +145,12 @@
 
   <section>
     <h2><span class="ico">📋</span>Shifts, breaks &amp; dispensing</h2>
-    <table class="grid"><thead><tr>
+    <div class="tablescroll"><table class="grid"><thead><tr>
       <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
       <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
       <th>Dispensing hours</th>
     </tr></thead>
-    <tbody id="shiftBody"></tbody></table>
+    <tbody id="shiftBody"></tbody></table></div>
   </section>
 
   <section>
@@ -323,7 +326,11 @@ function renderReport(){
     [cover, "Coverage"],
     [`${(Math.round(paid*4)/4)}h`, "Paid hours"],
   ].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("") : "";
-  const rng = b => b ? `${fmt(b.start)}–${fmt(b.end)}` : dash;
+  const apx = x => ((x%24)<12?"AM":"PM");
+  const hm  = x => { x=((x%24)+24)%24; let hr=Math.floor(x); const mn=Math.round((x-hr)*60); let d=hr%12; if(!d)d=12; return d+(mn?":"+String(mn).padStart(2,"0"):""); };
+  const rng = b => !b ? dash : (apx(b.start)===apx(b.end)
+        ? `${hm(b.start)}–${hm(b.end)} ${apx(b.end)}`                    // "6–6:15 AM"
+        : `${hm(b.start)} ${apx(b.start)}–${hm(b.end)} ${apx(b.end)}`);  // "11:45 AM–12:45 PM"
   document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>{
     const brks = p.breaks.filter(b=>b.label==="Break");
     const lunch = p.breaks.find(b=>b.label==="Lunch");
