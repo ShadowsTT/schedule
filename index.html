@@ -89,6 +89,10 @@
   .cov td.covcell.over  { background:#fef3c7; color:#92400e; }
   .cov td.covcell.met   { background:#dcfce7; color:#166534; }
   .optbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px; }
+  .viewnav { display:flex; gap:6px; padding:14px 36px 0; border-bottom:1px solid var(--line); }
+  .vbtn { background:#eef2f7; color:var(--muted); border-radius:9px 9px 0 0; padding:11px 18px; font-weight:700; }
+  .vbtn:hover { background:#e2e8f0; }
+  .vbtn.active { background:#fff; color:var(--accent); box-shadow:inset 0 -3px 0 var(--accent); }
   .gridscroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
   .gantt { border-collapse:separate; border-spacing:0; font-size:11px; width:100%; }
   .gantt th, .gantt td { border:0; border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; padding:0; }
@@ -143,7 +147,8 @@
     .slots span{font-size:9.5px;padding:2px 6px;margin:1px 2px 1px 0;}
     .grid tr{break-inside:avoid;}
     .note{border:0!important;padding:0!important;box-shadow:none!important;font-size:10px;}
-    .toolbar,.btn-x,.col-actions,.screen-only,footer,.daybar{display:none!important;}
+    .toolbar,.btn-x,.col-actions,.screen-only,footer,.daybar,.viewnav,#view-optimize{display:none!important;}
+    #view-schedule{display:block!important;}   /* always print the schedule, whatever view is open */
     /* whole-week print: hide live page, show stacked day pages */
     body.printing-week .page{display:none!important;}
     body.printing-week #weekPrint{display:block!important;}
@@ -182,6 +187,12 @@
     <button class="btn-x" id="delDay" title="Delete this day">🗑</button>
   </div>
 
+  <nav class="viewnav">
+    <button class="vbtn active" data-view="schedule">📋 Schedule</button>
+    <button class="vbtn" data-view="optimize">🎯 Coverage &amp; Optimize</button>
+  </nav>
+
+  <div id="view-schedule">
   <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
@@ -216,22 +227,6 @@
   </section>
 
   <section class="screen-only">
-    <h2><span class="ico">🎯</span>Clock-in coverage — target vs scheduled (per hour, this day)</h2>
-    <div class="legend">
-      <span><i class="sw met"></i>Target met</span>
-      <span><i class="sw under"></i>Under (need more)</span>
-      <span><i class="sw over"></i>Over</span>
-      <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
-    </div>
-    <div class="gridscroll"><table class="cov" id="cov"></table></div>
-    <div class="optbar">
-      <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
-      <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
-      <span class="empty" style="font-style:normal">Keeps each shift length; re-times starts to your targets, max 1h30 gap, first clock-in at 4 AM.</span>
-    </div>
-  </section>
-
-  <section class="screen-only">
     <h2><span class="ico">🔄</span>Dispensing rotation (hour by hour)</h2>
     <div class="legend">
       <span><i class="sw disp"></i>Dispensing</span>
@@ -245,6 +240,30 @@
 
   <footer>Round-robin, earliest clock-in first — everyone dispenses once per day before anyone repeats.
   A repeat only happens late when no one left on the floor has an unused turn. Sub-hour starts round up to the next whole hour. Changes save to this browser.</footer>
+  </div><!-- /view-schedule -->
+
+  <div id="view-optimize" style="display:none">
+  <section>
+    <h2><span class="ico">🎯</span>Clock-in coverage — target vs scheduled (per hour, this day)</h2>
+    <div class="legend">
+      <span><i class="sw met"></i>Target met</span>
+      <span><i class="sw under"></i>Under (need more)</span>
+      <span><i class="sw over"></i>Over</span>
+      <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
+    </div>
+    <div class="gridscroll"><table class="cov" id="cov"></table></div>
+    <div class="optbar">
+      <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
+      <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
+      <button class="btn-ghost" id="saveBtn2">Save</button>
+      <span class="empty" style="font-style:normal">Keeps each shift length; re-times starts to your targets, max 1h30 gap, first clock-in at 4 AM.</span>
+    </div>
+  </section>
+  <section>
+    <h2><span class="ico">📋</span>Resulting schedule (preview)</h2>
+    <div class="tablescroll"><table class="grid" id="optPreview"></table></div>
+  </section>
+  </div><!-- /view-optimize -->
 </div>
 
 <div id="weekPrint"></div>
@@ -613,7 +632,6 @@ function renderReport(){
     return `<tr><td class="rowname">${p.name}</td>${cells}</tr>`;
   }).join("");
   g.innerHTML = head + `<tbody>${body}</tbody>`;
-  renderCoverage();
 }
 
 const COV_HRS = (()=>{ const a=[]; for(let h=4;h<=21;h++) a.push(h); return a; })();  // 4am–9pm
@@ -636,6 +654,18 @@ function renderCoverage(){
 function refreshSched(){
   const starts = schedStarts();
   document.getElementById("covSched").innerHTML = `<td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}`;
+}
+function renderOptimize(){
+  renderCoverage();
+  const { people } = compute();
+  document.getElementById("optPreview").innerHTML = GRID_HEAD + `<tbody>${shiftRows(people)}</tbody>`;
+}
+function showView(v){
+  v = (v==="optimize") ? "optimize" : "schedule";
+  document.getElementById("view-schedule").style.display = v==="optimize" ? "none" : "";
+  document.getElementById("view-optimize").style.display = v==="optimize" ? "" : "none";
+  document.querySelectorAll(".vbtn").forEach(b=>b.classList.toggle("active", b.dataset.view===v));
+  if(location.hash.slice(1)!==v) location.hash = v;
 }
 
 /* ---- Optimizer: keep each shift length, re-time starts to hit clock-in targets
@@ -678,7 +708,7 @@ function renderDays(){
   sel.innerHTML = state.days.map((d,i)=>`<option value="${i}" ${i===state.active?"selected":""}>${(d.date||"Untitled day").replace(/</g,"&lt;")}</option>`).join("");
   document.getElementById("delDay").disabled = state.days.length<=1;
 }
-function renderAll(){ renderDays(); renderEditor(); renderReport(); }
+function renderAll(){ renderDays(); renderEditor(); renderReport(); renderOptimize(); }
 
 // events
 document.getElementById("editBody").addEventListener("input", e=>{
@@ -712,7 +742,13 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
 });
 document.getElementById("optBtn").addEventListener("click", optimizeStarts);
 document.getElementById("undoOpt").addEventListener("click", undoOptimize);
+document.getElementById("optPreview").addEventListener("input", e=>{   // notes editable in preview too
+  const oi=e.target.dataset.oi; if(oi==null) return; cur().shifts[oi].note = e.target.value;
+});
 document.getElementById("saveBtn").addEventListener("click", save);
+document.getElementById("saveBtn2").addEventListener("click", save);
+document.querySelectorAll(".vbtn").forEach(b=> b.addEventListener("click", ()=> showView(b.dataset.view)));
+window.addEventListener("hashchange", ()=> showView(location.hash.slice(1)));
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   if(confirm("Reset to the original schedule? Your edits will be lost.")){
     state=freshState(); save(); renderAll();
@@ -758,6 +794,7 @@ function printWeek(orient){
 }
 
 renderAll();
+showView(location.hash.slice(1));
 </script>
 </body>
 </html>
