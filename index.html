@@ -229,6 +229,32 @@ function makeBreaks(start, end, offset=0){
   });
 }
 
+// Give every 15-min break its own slot so only one associate is on a short break at a time.
+function staggerShortBreaks(people){
+  const used = new Set();                       // taken 15-min slots (quarter-hour index)
+  const qi = x => Math.round(x*4);
+  const items = [];
+  people.forEach(p=>{
+    const lunch = p.breaks.find(b=>b.label==="Lunch");
+    p.breaks.filter(b=>b.label==="Break").forEach(b=> items.push({b,p,lunch, ideal:b.start}));
+  });
+  items.sort((a,b)=> a.ideal-b.ideal);
+  for(const {b,p,lunch,ideal} of items){
+    const lo=p.start, hi=p.end-BRK;
+    let pick=null;
+    for(let d=0; d<=24 && pick==null; d+=0.25){
+      for(const t of (d===0?[ideal]:[ideal+d, ideal-d])){
+        if(t<lo-1e-9 || t>hi+1e-9) continue;       // inside this person's shift
+        if(used.has(qi(t))) continue;              // slot already taken by someone else
+        if(lunch && t<lunch.end-1e-9 && t+BRK>lunch.start+1e-9) continue; // not during own lunch
+        pick=t; break;
+      }
+    }
+    if(pick==null) pick=ideal;                     // crowded day: fall back, accept overlap
+    used.add(qi(pick)); b.start=pick; b.end=pick+BRK;
+  }
+}
+
 const overlapsHour = (b,h) => b.start < h+1 && b.end > h;  // break touches [h,h+1)
 function compute(){
   const seen = {};  // count associates already placed at each start time -> stagger their breaks
@@ -241,6 +267,7 @@ function compute(){
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
+  staggerShortBreaks(people);   // one associate on a 15-min break at a time
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
   const timeline = [];
