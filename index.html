@@ -684,7 +684,7 @@ function optimizeStarts(){
   const dem = state.demand || {};
   let slots = [];
   Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
-        .forEach(h=>{ const c=dem[h]; for(let j=0;j<c;j++) slots.push(h + (c>1 ? j*(1/c) : 0)); });
+        .forEach(h=>{ for(let j=0;j<dem[h];j++) slots.push(h); });   // all on the hour (no within-hour stagger)
   slots = slots.filter(t=>t>=OPEN).sort((a,b)=>a-b);
   if(slots.length>n) slots = slots.slice(0,n);                 // more demand than people: take earliest
   while(slots.length<n){ const last=slots.length?slots[slots.length-1]:OPEN; slots.push(Math.min(last+MAXGAP,21.5)); }
