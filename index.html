@@ -286,6 +286,7 @@ function compute(){
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
+  people.sort((a,b)=> a.start-b.start || a.end-b.end || a.name.localeCompare(b.name));  // order by clock-in
   staggerShortBreaks(people);   // one associate on a 15-min break at a time
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
