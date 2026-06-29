@@ -32,6 +32,8 @@
           padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; }
   .slots span { display:inline-block; background:#f1f5f9; border:1px solid var(--line);
           border-radius:6px; padding:2px 7px; margin:2px 4px 2px 0; font-size:12px; font-variant-numeric:tabular-nums; }
+  .slots span.lunch { background:#fff7ed; border-color:#fed7aa; color:#c2410c; }
+  .onbreak { color:var(--muted); }
   .timeline td:first-child { font-variant-numeric:tabular-nums; color:var(--muted); width:130px; }
   .empty { color:var(--muted); font-style:italic; }
   .err { color:var(--danger); font-size:12px; }
@@ -75,8 +77,8 @@
   </div>
 
   <section>
-    <h2>Dispensing hours per associate</h2>
-    <table><thead><tr><th>Associate</th><th>Start</th><th>End</th><th>Dispensing hours</th></tr></thead>
+    <h2>Shifts, breaks &amp; dispensing</h2>
+    <table><thead><tr><th>Associate</th><th>Start</th><th>End</th><th>Breaks</th><th>Dispensing hours</th></tr></thead>
     <tbody id="shiftBody"></tbody></table>
   </section>
 
@@ -137,20 +139,50 @@ const fmt = h => { h=((h%24)+24)%24; let hr=Math.floor(h); const mn=Math.round((
   return d+(mn?":"+String(mn).padStart(2,"0"):"")+" "+ap; };
 const slot = h => fmt(h)+"–"+fmt(h+1);
 
+/* ---- Break policy (edit these numbers to match your store) ----
+   Tiered by hours worked. Lunch = 60 min, breaks = 15 min.        */
+const LUNCH = 1.0, BRK = 0.25;
+const snap = x => Math.round(x*4)/4;           // snap to 15-min grid
+function makeBreaks(start, end){
+  const L = end - start;
+  let plan;
+  if(L < 6)      plan = [{label:"Break", at:0.50, len:BRK}];
+  else if(L < 8) plan = [{label:"Break", at:0.33, len:BRK},
+                         {label:"Lunch", at:0.66, len:LUNCH}];
+  else           plan = [{label:"Break", at:0.25, len:BRK},
+                         {label:"Lunch", at:0.50, len:LUNCH},
+                         {label:"Break", at:0.75, len:BRK}];
+  return plan.map(p=>{
+    let bs = snap(start + L*p.at - p.len/2);    // centre on the target point
+    bs = Math.max(start+0.25, Math.min(bs, end - p.len - 0.25)); // keep inside shift
+    return { label:p.label, start:bs, end:bs+p.len };
+  });
+}
+
+const overlapsHour = (b,h) => b.start < h+1 && b.end > h;  // break touches [h,h+1)
 function compute(){
-  const people = state.shifts.map(s=>({ name:s.name||"(unnamed)",
-        start:parseTime(s.start), end:parseTime(s.end), disp:0, slots:[] }))
+  const people = state.shifts.map(s=>{
+        const start=parseTime(s.start), end=parseTime(s.end);
+        const breaks = (start!=null&&end!=null&&end>start) ? makeBreaks(start,end) : [];
+        return { name:s.name||"(unnamed)", start, end, breaks, disp:0, slots:[] };
+      })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
   const timeline = [];
   for(let h=dayStart; h<dayEnd; h++){
-    const present = people.filter(p=>p.start<=h && p.end>h);
+    const present  = people.filter(p=>p.start<=h && p.end>h);
+    const onBreak  = p => p.breaks.some(b=>overlapsHour(b,h));
+    const eligible = present.filter(p=>!onBreak(p));
     if(!present.length){ timeline.push({h,who:null,others:[]}); continue; }
-    present.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
-    const on=present[0]; on.disp++; on.slots.push(slot(h));
-    timeline.push({h, who:on, others:present.slice(1)});
+    let on=null;
+    if(eligible.length){
+      eligible.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
+      on=eligible[0]; on.disp++; on.slots.push(slot(h));
+    }
+    const others = present.filter(p=>p!==on).map(p=>({name:p.name, brk:onBreak(p)}));
+    timeline.push({h, who:on, others});
   }
   return { people, timeline };
 }
@@ -170,12 +202,13 @@ function renderReport(){
   const { people, timeline } = compute();
   document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>`
     <tr><td class="name">${p.name}</td><td>${fmt(p.start)}</td><td>${fmt(p.end)}</td>
+    <td class="slots">${p.breaks.length?p.breaks.map(b=>`<span class="${b.label==='Lunch'?'lunch':''}">${b.label[0]} ${fmt(b.start)}–${fmt(b.end)}</span>`).join(""):'<span class="empty">—</span>'}</td>
     <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):'<span class="empty">—</span>'}</td></tr>`).join("")
-    : `<tr><td colspan="4" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+    : `<tr><td colspan="5" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
   document.getElementById("timeBody").innerHTML = timeline.map(t=>`
     <tr><td>${slot(t.h)}</td>
-    <td>${t.who?`<span class="pill">${t.who.name}</span>`:'<span class="empty">no one scheduled</span>'}</td>
-    <td>${t.others.map(o=>o.name).join(", ")||'<span class="empty">—</span>'}</td></tr>`).join("");
+    <td>${t.who?`<span class="pill">${t.who.name}</span>`:(t.others.length?'<span class="empty">all present on break</span>':'<span class="empty">no one scheduled</span>')}</td>
+    <td>${t.others.map(o=>o.brk?`<span class="onbreak">${o.name} (break)</span>`:o.name).join(", ")||'<span class="empty">—</span>'}</td></tr>`).join("");
 }
 
 function renderAll(){ renderEditor(); renderReport(); }
