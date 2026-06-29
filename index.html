@@ -106,6 +106,12 @@
   .saved { color:#16a34a; font-size:13px; font-weight:600; opacity:0; transition:opacity .3s; }
   .saved.show { opacity:1; }
   footer { padding:18px 36px 28px; color:var(--muted); font-size:12px; line-height:1.6; border-top:1px solid var(--line); background:var(--band); }
+  .daybar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:16px 36px; border-bottom:1px solid var(--line); background:var(--band); }
+  .daybar label { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  .daybar select { font:inherit; padding:8px 11px; border:1px solid var(--line); border-radius:9px; background:#fff; min-width:210px; max-width:60%; }
+  .daybar #delDay { font-size:15px; }
+  #weekPrint { display:none; }
+  .daypage .dayhdr { font-size:16px; margin:0 0 10px; }
   @media (max-width:640px){
     body{padding:12px 8px;} .page{border-radius:14px;}
     header{padding:22px 18px;} section{padding:18px 16px;}
@@ -120,11 +126,19 @@
     .slots span{font-size:9.5px;padding:2px 6px;margin:1px 2px 1px 0;}
     .grid tr{break-inside:avoid;}
     .note{border:0!important;padding:0!important;box-shadow:none!important;font-size:10px;}
-    .toolbar,.btn-x,.col-actions,.screen-only,footer{display:none!important;}
+    .toolbar,.btn-x,.col-actions,.screen-only,footer,.daybar{display:none!important;}
+    /* whole-week print: hide live page, show stacked day pages */
+    body.printing-week .page{display:none!important;}
+    body.printing-week #weekPrint{display:block!important;}
+    #weekPrint .daypage{break-after:page;padding:0;}
+    #weekPrint .daypage:last-child{break-after:auto;}
+    #weekPrint .grid{font-size:10px;} #weekPrint .grid th,#weekPrint .grid td{padding:4px 6px;}
+    #weekPrint .grid tr{break-inside:avoid;}
+    #weekPrint .note{border:0!important;padding:0!important;font-size:10px;}
     .edit input{border:0!important;background:transparent!important;box-shadow:none!important;}
     header input.date{background:transparent;border:0;}
     .pill{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    header,.stat,.pill,.lunchcell{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    header,.stat,.pill,.lunchcell,.slots span,.tasks span.task{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .gridscroll{overflow:visible;} .gantt{font-size:10px;}
     .gantt td.cell,.gantt td.off,.gantt td.work,.gantt td.brk,.gantt td.lunch,.gantt td.disp{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
@@ -142,6 +156,14 @@
     <div class="stats" id="stats"></div>
   </header>
 
+  <div class="daybar">
+    <label for="daySel">Day</label>
+    <select id="daySel"></select>
+    <button class="btn-ghost" id="newDay">+ New day</button>
+    <button class="btn-ghost" id="dupDay">Duplicate</button>
+    <button class="btn-x" id="delDay" title="Delete this day">🗑</button>
+  </div>
+
   <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
@@ -153,8 +175,9 @@
   <div class="toolbar">
     <button class="btn-ghost" id="addBtn">+ Add associate</button>
     <button class="btn-primary" id="saveBtn">Save</button>
-    <button class="btn-ghost" onclick="printAs('portrait')">Print Portrait</button>
-    <button class="btn-ghost" onclick="printAs('landscape')">Print Landscape</button>
+    <button class="btn-ghost" onclick="printAs('portrait')">Print Day (Portrait)</button>
+    <button class="btn-ghost" onclick="printAs('landscape')">Print Day (Landscape)</button>
+    <button class="btn-primary" onclick="printWeek('landscape')">Print Week</button>
     <button class="btn-ghost" id="resetBtn">Reset to defaults</button>
     <span class="saved" id="savedMsg">Saved ✓</span>
   </div>
@@ -190,6 +213,8 @@
   A repeat only happens late when no one left on the floor has an unused turn. Sub-hour starts round up to the next whole hour. Changes save to this browser.</footer>
 </div>
 
+<div id="weekPrint"></div>
+
 <script>
 const DEFAULTS = {
   date: "Saturday, 27 June 2026 · OMNI FOM",
@@ -214,11 +239,17 @@ const DEFAULTS = {
 };
 const KEY = "scheduleDashboard";
 
+const freshState = () => ({ v:2, active:0, days:[ structuredClone(DEFAULTS) ] });
 let state = load();
 function load(){
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.shifts) return s; } catch(e){}
-  return structuredClone(DEFAULTS);
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if(s && s.days) return s;                       // already multi-day
+    if(s && s.shifts) return { v:2, active:0, days:[ s ] };  // migrate old single-day
+  } catch(e){}
+  return freshState();
 }
+const cur = () => state.days[state.active];          // active day {date, shifts}
 function save(){
   localStorage.setItem(KEY, JSON.stringify(state));
   const m = document.getElementById("savedMsg"); m.classList.add("show");
@@ -321,9 +352,10 @@ function taskChips(tasks){
 }
 
 const overlapsHour = (b,h) => b.start < h+1 && b.end > h;  // break touches [h,h+1)
-function compute(){
+function compute(shifts){
+  shifts = shifts || cur().shifts;
   const seen = {};  // count associates already placed at each start time -> stagger their breaks
-  const people = state.shifts.map((s,i)=>{
+  const people = shifts.map((s,i)=>{
         const start=parseTime(s.start), end=parseTime(s.end);
         const ok = start!=null&&end!=null&&end>start;
         const idx = ok ? (seen[start]=(seen[start]||0)+1)-1 : 0;
@@ -358,8 +390,8 @@ function compute(){
 }
 
 function renderEditor(){
-  document.getElementById("reportDate").value = state.date;
-  document.getElementById("editBody").innerHTML = state.shifts.map((s,i)=>`
+  document.getElementById("reportDate").value = cur().date;
+  document.getElementById("editBody").innerHTML = cur().shifts.map((s,i)=>`
     <tr class="edit">
       <td><input data-i="${i}" data-k="name" value="${(s.name||"").replace(/"/g,'&quot;')}" placeholder="Name"></td>
       <td class="t"><input data-i="${i}" data-k="start" value="${s.start||""}" placeholder="4:00am"></td>
@@ -369,28 +401,34 @@ function renderEditor(){
     </tr>`).join("");
 }
 
-function renderReport(){
-  const { people, timeline } = compute();
-  const dash = '<span class="empty">—</span>';
-  // header summary stats
+const GRID_HEAD = `<colgroup>
+  <col style="width:11%"><col style="width:6%"><col style="width:6%"><col style="width:4%">
+  <col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:14%"><col style="width:19%">
+</colgroup><thead><tr>
+  <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
+  <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
+  <th>Dispensing</th><th>Tasks</th><th>Notes</th>
+</tr></thead>`;
+function statHTML(people){
   let paid = 0;
   people.forEach(p=>{ const l=p.breaks.find(b=>b.label==="Lunch"); paid += (p.end-p.start)-(l?l.end-l.start:0); });
   const cover = people.length ? `${fmt(Math.min(...people.map(p=>p.start)))} – ${fmt(Math.max(...people.map(p=>p.end)))}` : "—";
-  document.getElementById("stats").innerHTML = people.length ? [
-    [`${people.length}`, "Associates"],
-    [cover, "Coverage"],
-    [`${(Math.round(paid*4)/4)}h`, "Paid hours"],
+  return people.length ? [
+    [`${people.length}`, "Associates"], [cover, "Coverage"], [`${(Math.round(paid*4)/4)}h`, "Paid hours"],
   ].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("") : "";
+}
+function shiftRows(people){
+  const dash = '<span class="empty">—</span>';
   const apx = x => ((x%24)<12?"AM":"PM");
   const hm  = x => { x=((x%24)+24)%24; let hr=Math.floor(x); const mn=Math.round((x-hr)*60); let d=hr%12; if(!d)d=12; return d+(mn?":"+String(mn).padStart(2,"0"):""); };
   const rng = b => !b ? dash : (apx(b.start)===apx(b.end)
-        ? `${hm(b.start)}–${hm(b.end)} ${apx(b.end)}`                    // "6–6:15 AM"
-        : `${hm(b.start)} ${apx(b.start)}–${hm(b.end)} ${apx(b.end)}`);  // "11:45 AM–12:45 PM"
-  document.getElementById("shiftBody").innerHTML = people.length ? people.map(p=>{
+        ? `${hm(b.start)}–${hm(b.end)} ${apx(b.end)}`
+        : `${hm(b.start)} ${apx(b.start)}–${hm(b.end)} ${apx(b.end)}`);
+  if(!people.length) return `<tr><td colspan="10" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+  return people.map(p=>{
     const brks = p.breaks.filter(b=>b.label==="Break");
     const lunch = p.breaks.find(b=>b.label==="Lunch");
-    const lunchHrs = lunch ? (lunch.end-lunch.start) : 0;
-    const hrs = (p.end-p.start) - lunchHrs;   // paid hours: lunch is unpaid
+    const hrs = (p.end-p.start) - (lunch?lunch.end-lunch.start:0);   // lunch unpaid
     return `<tr>
       <td class="name">${p.name}</td>
       <td class="c">${fmt(p.start)}</td><td class="c">${fmt(p.end)}</td>
@@ -401,8 +439,12 @@ function renderReport(){
       <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash}</td>
       <td class="slots tasks">${taskChips(p.tasks)}</td>
       <td class="notecell"><input class="note" data-oi="${p.oi}" value="${(p.note||"").replace(/"/g,'&quot;')}" placeholder="e.g. called in, done…"></td>
-    </tr>`;}).join("")
-    : `<tr><td colspan="10" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+    </tr>`;}).join("");
+}
+function renderReport(){
+  const { people, timeline } = compute();
+  document.getElementById("stats").innerHTML = statHTML(people);
+  document.getElementById("shiftBody").innerHTML = shiftRows(people);
   // ---- gantt timeline grid: associates × hours ----
   const g = document.getElementById("gantt");
   if(!people.length){ g.innerHTML = `<tr><td class="empty" style="padding:14px">Add associates to see the timeline.</td></tr>`; return; }
@@ -422,39 +464,73 @@ function renderReport(){
   g.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
-function renderAll(){ renderEditor(); renderReport(); }
+function renderDays(){
+  const sel = document.getElementById("daySel");
+  sel.innerHTML = state.days.map((d,i)=>`<option value="${i}" ${i===state.active?"selected":""}>${(d.date||"Untitled day").replace(/</g,"&lt;")}</option>`).join("");
+  document.getElementById("delDay").disabled = state.days.length<=1;
+}
+function renderAll(){ renderDays(); renderEditor(); renderReport(); }
 
 // events
 document.getElementById("editBody").addEventListener("input", e=>{
   const i=e.target.dataset.i, k=e.target.dataset.k;
   if(i==null) return;
-  state.shifts[i][k] = e.target.type==="checkbox" ? e.target.checked : e.target.value;
+  cur().shifts[i][k] = e.target.type==="checkbox" ? e.target.checked : e.target.value;
   renderReport();
 });
 document.getElementById("shiftBody").addEventListener("input", e=>{
   const oi=e.target.dataset.oi;
   if(oi==null) return;
-  state.shifts[oi].note = e.target.value;   // saved on next Save; no re-render so focus stays
+  cur().shifts[oi].note = e.target.value;   // saved on next Save; no re-render so focus stays
 });
 document.getElementById("editBody").addEventListener("click", e=>{
   const d=e.target.dataset.del;
   if(d==null) return;
-  state.shifts.splice(+d,1); renderAll();
+  cur().shifts.splice(+d,1); renderAll();
 });
-document.getElementById("reportDate").addEventListener("input", e=>{ state.date=e.target.value; });
+document.getElementById("reportDate").addEventListener("input", e=>{ cur().date=e.target.value; renderDays(); });
 document.getElementById("addBtn").addEventListener("click", ()=>{
-  state.shifts.push({name:"",start:"",end:""}); renderAll();
+  cur().shifts.push({name:"",start:"",end:""}); renderAll();
   const inputs=document.querySelectorAll('#editBody input[data-k="name"]');
   inputs[inputs.length-1].focus();
 });
 document.getElementById("saveBtn").addEventListener("click", save);
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   if(confirm("Reset to the original schedule? Your edits will be lost.")){
-    state=structuredClone(DEFAULTS); save(); renderAll();
+    state=freshState(); save(); renderAll();
   }
 });
 
+// ---- day switcher ----
+document.getElementById("daySel").addEventListener("change", e=>{ state.active=+e.target.value; renderAll(); });
+document.getElementById("newDay").addEventListener("click", ()=>{
+  state.days.push({ date:"New day", shifts: structuredClone(DEFAULTS.shifts) });
+  state.active = state.days.length-1; renderAll();
+});
+document.getElementById("dupDay").addEventListener("click", ()=>{
+  const copy = structuredClone(cur()); copy.date = (copy.date||"Day")+" (copy)";
+  state.days.splice(state.active+1, 0, copy); state.active++; renderAll();
+});
+document.getElementById("delDay").addEventListener("click", ()=>{
+  if(state.days.length<=1) return;
+  if(confirm("Delete this day?")){ state.days.splice(state.active,1); state.active=Math.max(0,state.active-1); renderAll(); }
+});
+
 function printAs(orient){
+  document.body.classList.remove("printing-week");
+  document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
+  window.print();
+}
+function printWeek(orient){
+  const wp = document.getElementById("weekPrint");
+  wp.innerHTML = state.days.map(d=>{
+    const { people } = compute(d.shifts);
+    return `<section class="daypage">
+      <h1 class="dayhdr">${(d.date||"Untitled day").replace(/</g,"&lt;")}</h1>
+      <table class="grid">${GRID_HEAD}<tbody>${shiftRows(people)}</tbody></table>
+    </section>`;
+  }).join("");
+  document.body.classList.add("printing-week");
   document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
   window.print();
 }
