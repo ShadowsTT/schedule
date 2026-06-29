@@ -111,7 +111,11 @@
   .daybar select { font:inherit; padding:8px 11px; border:1px solid var(--line); border-radius:9px; background:#fff; min-width:210px; max-width:60%; }
   .daybar #delDay { font-size:15px; }
   #weekPrint { display:none; }
-  .daypage .dayhdr { font-size:16px; margin:0 0 10px; }
+  #weekPrint .phead { background:linear-gradient(135deg,#1e3a8a,#2563eb); color:#fff; padding:14px 18px;
+        border-radius:10px; margin:0 0 10px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+  #weekPrint .phead .eyebrow { color:rgba(255,255,255,.85); }
+  #weekPrint .phead .dayhdr { color:#fff; font-size:17px; margin:3px 0 0; }
+  #weekPrint .phead .stats { display:flex; gap:8px; }
   @media (max-width:640px){
     body{padding:12px 8px;} .page{border-radius:14px;}
     header{padding:22px 18px;} section{padding:18px 16px;}
@@ -138,7 +142,8 @@
     .edit input{border:0!important;background:transparent!important;box-shadow:none!important;}
     header input.date{background:transparent;border:0;}
     .pill{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    header,.stat,.pill,.lunchcell,.slots span,.tasks span.task{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .stat.paid{display:none!important;}   /* hide Paid hours on print */
+    header,.stat,.pill,.lunchcell,.slots span,.tasks span.task,#weekPrint .phead{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .gridscroll{overflow:visible;} .gantt{font-size:10px;}
     .gantt td.cell,.gantt td.off,.gantt td.work,.gantt td.brk,.gantt td.lunch,.gantt td.disp{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
@@ -504,8 +509,8 @@ function statHTML(people){
   people.forEach(p=>{ const l=p.breaks.find(b=>b.label==="Lunch"); paid += (p.end-p.start)-(l?l.end-l.start:0); });
   const cover = people.length ? `${fmt(Math.min(...people.map(p=>p.start)))} – ${fmt(Math.max(...people.map(p=>p.end)))}` : "—";
   return people.length ? [
-    [`${people.length}`, "Associates"], [cover, "Coverage"], [`${(Math.round(paid*4)/4)}h`, "Paid hours"],
-  ].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("") : "";
+    [`${people.length}`, "Associates", ""], [cover, "Coverage", ""], [`${(Math.round(paid*4)/4)}h`, "Paid hours", " paid"],
+  ].map(([b,s,cls])=>`<div class="stat${cls}"><b>${b}</b><span>${s}</span></div>`).join("") : "";
 }
 function shiftRows(people){
   const dash = '<span class="empty">—</span>';
@@ -616,7 +621,11 @@ function printWeek(orient){
   wp.innerHTML = state.days.map(d=>{
     const { people } = compute(d.shifts);
     return `<section class="daypage">
-      <h1 class="dayhdr">${(d.date||"Untitled day").replace(/</g,"&lt;")}</h1>
+      <div class="phead">
+        <div><div class="eyebrow">Daily Schedule Report</div>
+        <h1 class="dayhdr">${(d.date||"Untitled day").replace(/</g,"&lt;")}</h1></div>
+        <div class="stats">${statHTML(people)}</div>
+      </div>
       <table class="grid">${GRID_HEAD}<tbody>${shiftRows(people)}</tbody></table>
     </section>`;
   }).join("");
