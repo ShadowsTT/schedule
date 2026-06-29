@@ -108,7 +108,13 @@
     th,td{padding:8px 8px;}
   }
   @media print {
-    body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;}
+    @page { size:portrait; margin:8mm; }
+    body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;max-width:none;}
+    header{padding:14px 20px;} header h1{font-size:19px;} header .stats{margin-top:10px;}
+    section{padding:10px 16px;}
+    .grid{font-size:10px;} .grid th,.grid td{padding:4px 6px;}
+    .slots span{font-size:9.5px;padding:2px 6px;margin:1px 2px 1px 0;}
+    .grid tr{break-inside:avoid;}
     .toolbar,.btn-x,.col-actions,.screen-only,footer{display:none!important;}
     .edit input{border:0!important;background:transparent!important;box-shadow:none!important;}
     header input.date{background:transparent;border:0;}
