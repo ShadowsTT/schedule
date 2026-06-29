@@ -155,8 +155,8 @@
     <div class="gridscroll"><table class="gantt" id="gantt"></table></div>
   </section>
 
-  <footer>Round-robin, earliest clock-in first — each hour goes to whoever present has dispensed least so far.
-  Sub-hour starts round up to the next whole dispensing hour. Changes save to this browser.</footer>
+  <footer>Round-robin, earliest clock-in first — everyone dispenses once per day before anyone repeats.
+  A repeat only happens late when no one left on the floor has an unused turn. Sub-hour starts round up to the next whole hour. Changes save to this browser.</footer>
 </div>
 
 <script>
@@ -250,9 +250,12 @@ function compute(){
     const eligible = present.filter(p=>!onBreak(p));
     if(!present.length){ timeline.push({h,who:null,others:[]}); continue; }
     let on=null;
-    if(eligible.length){
-      eligible.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
-      on=eligible[0]; on.disp++; on.slots.push(slot(h));
+    // once-per-day: only people who haven't dispensed yet; fall back to anyone present only if none left
+    let pool = eligible.filter(p=>p.disp===0);
+    if(!pool.length) pool = eligible;
+    if(pool.length){
+      pool.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
+      on=pool[0]; on.disp++; on.slots.push(slot(h));
     }
     const others = present.filter(p=>p!==on).map(p=>({name:p.name, brk:onBreak(p)}));
     timeline.push({h, who:on, others});
