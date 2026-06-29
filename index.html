@@ -54,12 +54,13 @@
   .pill { display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#2563eb,#3b82f6); color:#fff;
           padding:4px 12px; border-radius:99px; font-size:12.5px; font-weight:600; box-shadow:0 1px 2px rgba(37,99,235,.35); }
   .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:#bfdbfe; }
-  .tablescroll { overflow-x:auto; }
-  .grid td, .grid th { white-space:nowrap; }
-  .grid td.name { white-space:normal; }
-  .slots { min-width:96px; }
+  .tablescroll { overflow-x:auto; }            /* safety net; table is sized to fit without it */
+  .grid { font-size:13px; table-layout:fixed; }
+  .grid th, .grid td { padding:9px 8px; overflow:hidden; }
+  .grid .c { white-space:nowrap; }             /* time cells stay on one line */
+  .grid td.name { white-space:normal; word-break:break-word; }
   .slots span { display:inline-block; white-space:nowrap; background:#eef2ff; border:1px solid #dbe3ff; color:#3b50c0;
-          border-radius:7px; padding:3px 9px; margin:2px 4px 2px 0; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+          border-radius:7px; padding:3px 8px; margin:2px 3px 2px 0; font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums; }
   .onbreak { color:var(--muted); font-style:italic; }
   /* gantt timeline grid */
   .legend { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:12px; color:var(--muted); }
@@ -145,10 +146,15 @@
 
   <section>
     <h2><span class="ico">📋</span>Shifts, breaks &amp; dispensing</h2>
-    <div class="tablescroll"><table class="grid"><thead><tr>
+    <div class="tablescroll"><table class="grid">
+    <colgroup>
+      <col style="width:15%"><col style="width:8%"><col style="width:9%"><col style="width:6%">
+      <col style="width:15%"><col style="width:16%"><col style="width:15%"><col style="width:16%">
+    </colgroup>
+    <thead><tr>
       <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
       <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
-      <th>Dispensing hours</th>
+      <th>Dispensing</th>
     </tr></thead>
     <tbody id="shiftBody"></tbody></table></div>
   </section>
