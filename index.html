@@ -108,7 +108,6 @@
     th,td{padding:8px 8px;}
   }
   @media print {
-    @page { size:portrait; margin:8mm; }
     body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;max-width:none;}
     header{padding:14px 20px;} header h1{font-size:19px;} header .stats{margin-top:10px;}
     section{padding:10px 16px;}
@@ -124,6 +123,7 @@
     .gantt td.cell,.gantt td.off,.gantt td.work,.gantt td.brk,.gantt td.lunch,.gantt td.disp{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
 </style>
+<style id="pageOrient">@page{size:portrait;margin:8mm;}</style>
 </head>
 <body>
 <div class="page">
@@ -145,7 +145,8 @@
   <div class="toolbar">
     <button class="btn-ghost" id="addBtn">+ Add associate</button>
     <button class="btn-primary" id="saveBtn">Save</button>
-    <button class="btn-ghost" onclick="window.print()">Print / PDF</button>
+    <button class="btn-ghost" onclick="printAs('portrait')">Print Portrait</button>
+    <button class="btn-ghost" onclick="printAs('landscape')">Print Landscape</button>
     <button class="btn-ghost" id="resetBtn">Reset to defaults</button>
     <span class="saved" id="savedMsg">Saved ✓</span>
   </div>
@@ -404,6 +405,11 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
     state=structuredClone(DEFAULTS); save(); renderAll();
   }
 });
+
+function printAs(orient){
+  document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
+  window.print();
+}
 
 renderAll();
 </script>
