@@ -286,7 +286,7 @@ function staggerShortBreaks(people){
    window = [from,to] the task must be done within; count = how many times; dmOnly = managers only */
 const TASKS = [
   { name:"4AM Temps & Clean", short:"4AM Temps/Clean",  window:[4,11],  count:1, dmOnly:false },
-  { name:"Availability Report", short:"Avail Report",   window:null,    count:3, dmOnly:true  },
+  { name:"Availability Report", short:"Avail Report",   window:null,    count:3, dmOnly:true, perDM:true },
   { name:"4PM Temps & Clean", short:"4PM Temps/Clean",  window:[16,23], count:1, dmOnly:false },
 ];
 function assignTasks(people){
@@ -299,7 +299,8 @@ function assignTasks(people){
       if(win.length) pool = win;                               // prefer people on shift in the window
     }
     if(!pool.length) continue;
-    for(let i=0;i<t.count;i++){
+    const n = (t.perDM && dms.length) ? dms.length : t.count;   // one per DM when DMs exist
+    for(let i=0;i<n;i++){
       pool.sort((a,b)=> a.tasks.length-b.tasks.length || a.start-b.start || a.name.localeCompare(b.name));
       pool[0].tasks.push(t.short);                             // least-loaded gets it -> even split
     }
