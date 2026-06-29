@@ -20,7 +20,9 @@
         color:#fff; padding:8px 12px; border-radius:9px; width:min(380px,100%); backdrop-filter:blur(2px); }
   header input.date::placeholder { color:rgba(255,255,255,.7); }
   header input.date:focus { outline:none; background:rgba(255,255,255,.26); }
-  .stats { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; position:relative; z-index:1; }
+  header { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; flex-wrap:wrap; }
+  .hgroup { min-width:0; }
+  .stats { display:flex; gap:10px; flex-wrap:wrap; position:relative; z-index:1; }
   .stat { background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.2); border-radius:11px; padding:9px 15px; min-width:92px; }
   .stat b { display:block; font-size:19px; font-weight:700; line-height:1.1; }
   .stat span { font-size:11px; text-transform:uppercase; letter-spacing:.07em; opacity:.82; }
@@ -132,9 +134,11 @@
 <body>
 <div class="page">
   <header>
-    <div class="eyebrow">Daily Schedule Report</div>
-    <h1>Shift &amp; Dispensing Dashboard</h1>
-    <input class="date" id="reportDate" placeholder="Report date / workgroup">
+    <div class="hgroup">
+      <div class="eyebrow">Daily Schedule Report</div>
+      <h1>Shift &amp; Dispensing Dashboard</h1>
+      <input class="date" id="reportDate" placeholder="Report date / workgroup">
+    </div>
     <div class="stats" id="stats"></div>
   </header>
 
