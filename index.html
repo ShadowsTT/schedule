@@ -61,6 +61,7 @@
   .grid td.name { white-space:normal; word-break:break-word; }
   .slots span { display:inline-block; white-space:nowrap; background:#eef2ff; border:1px solid #dbe3ff; color:#3b50c0;
           border-radius:7px; padding:3px 8px; margin:2px 3px 2px 0; font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .tasks span.task { white-space:normal; background:#f3e8ff; border-color:#e9d5ff; color:#7e22ce; }
   .onbreak { color:var(--muted); font-style:italic; }
   /* gantt timeline grid */
   .legend { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:12px; color:var(--muted); }
@@ -137,7 +138,7 @@
   <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
-      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="col-actions"></th></tr></thead>
+      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="c">DM</th><th class="col-actions"></th></tr></thead>
       <tbody id="editBody"></tbody>
     </table>
   </section>
@@ -155,13 +156,13 @@
     <h2><span class="ico">📋</span>Shifts, breaks &amp; dispensing</h2>
     <div class="tablescroll"><table class="grid">
     <colgroup>
-      <col style="width:15%"><col style="width:8%"><col style="width:9%"><col style="width:6%">
-      <col style="width:15%"><col style="width:16%"><col style="width:15%"><col style="width:16%">
+      <col style="width:13%"><col style="width:7%"><col style="width:7%"><col style="width:5%">
+      <col style="width:12%"><col style="width:13%"><col style="width:12%"><col style="width:12%"><col style="width:19%">
     </colgroup>
     <thead><tr>
       <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
       <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
-      <th>Dispensing</th>
+      <th>Dispensing</th><th>Tasks</th>
     </tr></thead>
     <tbody id="shiftBody"></tbody></table></div>
   </section>
@@ -200,8 +201,8 @@ const DEFAULTS = {
     { name:"HAYDEN.S 4020",        start:"1:30pm",  end:"10:00pm" },
     { name:"COLIN.F 6428",         start:"2:00pm",  end:"8:30pm"  },
     { name:"TIFFANY.E 4918",       start:"2:00pm",  end:"8:30pm"  },
-    { name:"BENUDHAR.P 3098",      start:"10:00am", end:"6:30pm"  },
-    { name:"CHEYANNE.H 3503",      start:"12:00pm", end:"8:30pm"  },
+    { name:"BENUDHAR.P 3098",      start:"10:00am", end:"6:30pm", dm:true },
+    { name:"CHEYANNE.H 3503",      start:"12:00pm", end:"8:30pm", dm:true },
   ]
 };
 const KEY = "scheduleDashboard";
@@ -281,6 +282,36 @@ function staggerShortBreaks(people){
   }
 }
 
+/* ---- Recurring tasks (edit to match your store) ----
+   window = [from,to] the task must be done within; count = how many times; dmOnly = managers only */
+const TASKS = [
+  { name:"4AM Temps & Clean", short:"4AM Temps/Clean",  window:[4,11],  count:1, dmOnly:false },
+  { name:"Availability Report", short:"Avail Report",   window:null,    count:3, dmOnly:true  },
+  { name:"4PM Temps & Clean", short:"4PM Temps/Clean",  window:[16,23], count:1, dmOnly:false },
+];
+function assignTasks(people){
+  people.forEach(p=>p.tasks=[]);
+  const dms = people.filter(p=>p.dm);
+  for(const t of TASKS){
+    let pool = t.dmOnly ? (dms.length?dms:people) : people;   // no DM marked -> spread to anyone
+    if(t.window){
+      const win = pool.filter(p=> p.start < t.window[1] && p.end > t.window[0]);
+      if(win.length) pool = win;                               // prefer people on shift in the window
+    }
+    if(!pool.length) continue;
+    for(let i=0;i<t.count;i++){
+      pool.sort((a,b)=> a.tasks.length-b.tasks.length || a.start-b.start || a.name.localeCompare(b.name));
+      pool[0].tasks.push(t.short);                             // least-loaded gets it -> even split
+    }
+  }
+}
+
+function taskChips(tasks){
+  if(!tasks || !tasks.length) return '<span class="empty">—</span>';
+  const c={}; tasks.forEach(t=>c[t]=(c[t]||0)+1);
+  return Object.entries(c).map(([t,n])=>`<span class="task">${t}${n>1?" ×"+n:""}</span>`).join("");
+}
+
 const overlapsHour = (b,h) => b.start < h+1 && b.end > h;  // break touches [h,h+1)
 function compute(){
   const seen = {};  // count associates already placed at each start time -> stagger their breaks
@@ -289,12 +320,13 @@ function compute(){
         const ok = start!=null&&end!=null&&end>start;
         const idx = ok ? (seen[start]=(seen[start]||0)+1)-1 : 0;
         const breaks = ok ? makeBreaks(start,end, idx*STAGGER) : [];
-        return { name:s.name||"(unnamed)", start, end, breaks, disp:0, slots:[] };
+        return { name:s.name||"(unnamed)", start, end, dm:!!s.dm, breaks, disp:0, slots:[], tasks:[] };
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
   people.sort((a,b)=> a.start-b.start || a.end-b.end || a.name.localeCompare(b.name));  // order by clock-in
   staggerShortBreaks(people);   // one associate on a 15-min break at a time
+  assignTasks(people);          // auto-assign recurring tasks, evenly
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
   const timeline = [];
@@ -324,6 +356,7 @@ function renderEditor(){
       <td><input data-i="${i}" data-k="name" value="${(s.name||"").replace(/"/g,'&quot;')}" placeholder="Name"></td>
       <td class="t"><input data-i="${i}" data-k="start" value="${s.start||""}" placeholder="4:00am"></td>
       <td class="t"><input data-i="${i}" data-k="end" value="${s.end||""}" placeholder="12:30pm"></td>
+      <td class="c"><input type="checkbox" data-i="${i}" data-k="dm" ${s.dm?"checked":""} title="Department Manager"></td>
       <td class="col-actions"><button class="btn-x" data-del="${i}" title="Remove">✕</button></td>
     </tr>`).join("");
 }
@@ -358,8 +391,9 @@ function renderReport(){
       <td class="c lunchcell">${rng(lunch)}</td>
       <td class="c brk">${rng(brks[1])}</td>
       <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash}</td>
+      <td class="slots tasks">${taskChips(p.tasks)}</td>
     </tr>`;}).join("")
-    : `<tr><td colspan="8" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
+    : `<tr><td colspan="9" class="empty">Add associates above (check time formats — use 4:00am / 12:30pm).</td></tr>`;
   // ---- gantt timeline grid: associates × hours ----
   const g = document.getElementById("gantt");
   if(!people.length){ g.innerHTML = `<tr><td class="empty" style="padding:14px">Add associates to see the timeline.</td></tr>`; return; }
@@ -385,7 +419,7 @@ function renderAll(){ renderEditor(); renderReport(); }
 document.getElementById("editBody").addEventListener("input", e=>{
   const i=e.target.dataset.i, k=e.target.dataset.k;
   if(i==null) return;
-  state.shifts[i][k] = e.target.value;
+  state.shifts[i][k] = e.target.type==="checkbox" ? e.target.checked : e.target.value;
   renderReport();
 });
 document.getElementById("editBody").addEventListener("click", e=>{
