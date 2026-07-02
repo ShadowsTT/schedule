@@ -56,9 +56,9 @@
         <!-- 3 · staff -->
         <section class="card sec">
           <h2 class="h">3 · Staff <span class="muted">(transcribe from the image)</span></h2>
-          <p class="field-hint">Who's working that day and their availability window. The optimizer decides <em>when</em> each works to match demand. Tick <b>AM</b> for associates who must stay in the morning — their shift is pinned to the start of their availability.</p>
+          <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must stay in the morning — their start doesn't move.</p>
           <table class="grid" id="staff">
-            <thead><tr><th>Name</th><th>Avail. start</th><th>Avail. end</th><th>Min hrs</th><th>Max hrs</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Start</th><th>End</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
           <button class="btn btn-secondary sm" id="addRow">＋ add person</button>
@@ -179,9 +179,11 @@
   </style>
 
   <script>
-  // ---- optimizer core (pure — direct port of the FastAPI app's optimizer.py) ----
-  // Greedy shift placement: repeatedly place the shift that fills the most
-  // still-uncovered demand, lightly penalising overstaffing.
+  // ---- optimizer core (pure) ----
+  // Greedy shift RE-TIMING: each person's parsed start/end is a fixed-length
+  // shift; the optimizer slides it to fill the most still-uncovered demand,
+  // lightly penalising overstaffing. Ties prefer the smallest move from the
+  // original start. AM-locked shifts don't move at all.
   // ponytail: 0.34 overstaff penalty is the one tuning knob — raise it to spread
   // people thinner (less overlap), lower it to pack shifts onto peak hours.
   const OVERSTAFF_PENALTY = 0.34;
@@ -203,10 +205,11 @@
     const assignments = [];
 
     const employees = req.employees || [];
-    // Least-flexible first; morning-locked people are the least flexible of all.
+    // Least-flexible first: morning-locked people, then longest shifts (fewest
+    // places they can go), so the short flexible shifts mop up remaining gaps.
     const order = [...employees.keys()].sort((a, b) =>
       ((employees[a].morning ? 0 : 1) - (employees[b].morning ? 0 : 1)) ||
-      ((employees[a].end - employees[a].start) - (employees[b].end - employees[b].start)));
+      ((employees[b].end - employees[b].start) - (employees[a].end - employees[a].start)));
 
     for(const idx of order){
       const emp = employees[idx];
@@ -217,30 +220,21 @@
                           hours: 0, morning: !!emp.morning});
         continue;
       }
-      let minSlots = Math.max(1, Math.round((emp.min_hours ?? (we - ws) / sph) * sph));
-      let maxSlots = Math.round((emp.max_hours ?? (we - ws) / sph) * sph);
-      minSlots = Math.min(minSlots, we - ws);
-      maxSlots = Math.min(Math.max(maxSlots, minSlots), we - ws);
-
-      // Hard constraint: `morning` means they must stay in the morning, so the
-      // shift is pinned to the start of their availability — only length varies.
-      const starts = emp.morning ? [ws]
-        : Array.from({length: we - minSlots + 1 - ws}, (_, k) => ws + k);
-      let best = null;  // [benefit, -length, start], compared lexicographically
+      // The parsed start/end IS the shift: its length is fixed, only its
+      // position moves. AM-locked people keep their start exactly.
+      const len = Math.min(we - ws, n);
+      const starts = emp.morning ? [Math.min(ws, n - len)]
+        : Array.from({length: n - len + 1}, (_, k) => k);
+      let best = null;  // [benefit, -distance from original start], lexicographic
       for(const s of starts){
-        for(let len = minSlots; len <= maxSlots; len++){
-          const e = s + len;
-          if(e > we) break;
-          let benefit = 0;
-          for(let i = s; i < e; i++)
-            benefit += coverage[i] < effDemand[i] ? 1 : -OVERSTAFF_PENALTY;
-          const cand = [benefit, -len, s];
-          if(!best || cand[0] > best[0] ||
-             (cand[0] === best[0] && (cand[1] > best[1] ||
-             (cand[1] === best[1] && cand[2] > best[2])))) best = cand;
-        }
+        let benefit = 0;
+        for(let i = s; i < s + len; i++)
+          benefit += coverage[i] < effDemand[i] ? 1 : -OVERSTAFF_PENALTY;
+        const cand = [benefit, -Math.abs(s - ws), s];
+        if(!best || cand[0] > best[0] ||
+           (cand[0] === best[0] && cand[1] > best[1])) best = cand;
       }
-      const len = -best[1], s = best[2], e = s + len;
+      const s = best[2], e = s + len;
       for(let i = s; i < e; i++) coverage[i]++;
       assignments.push({
         name: emp.name || `#${idx+1}`,
@@ -306,27 +300,24 @@
 
   // ---- staff table ----
   const seed=[
-    ['Opener A',4,12,6,8,true],['Opener B',4,12,6,8,true],
-    ['Mid C',9,17,6,8],['Mid D',10,18,6,8],['Mid E',11,19,6,8],
-    ['Close F',14,22,6,8],['Close G',14,22,6,8],['Close H',16,22,4,6],
+    ['Opener A',4,12,true],['Opener B',4,12,true],
+    ['Mid C',9,17],['Mid D',10,18],['Mid E',11,19],
+    ['Close F',14,22],['Close G',14,22],['Close H',16,22],
   ];
-  function addRow(r=['',9,17,'','',false]){
+  function addRow(r=['',9,17,false]){
     const tb=$('#staff tbody'), tr=document.createElement('tr');
     tr.innerHTML=`<td class="tname"><input value="${r[0]}" placeholder="name"></td>
       <td><input type="number" step="0.5" value="${r[1]}"></td>
       <td><input type="number" step="0.5" value="${r[2]}"></td>
-      <td><input type="number" step="0.5" value="${r[3]}" placeholder="auto"></td>
-      <td><input type="number" step="0.5" value="${r[4]}" placeholder="auto"></td>
-      <td><input type="checkbox" class="am" title="must stay in the morning" ${r[5]?'checked':''}></td>
+      <td><input type="checkbox" class="am" title="must stay in the morning" ${r[3]?'checked':''}></td>
       <td><button class="del" title="remove">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>tr.remove();
     tb.appendChild(tr);
   }
   function readStaff(){
     return [...$('#staff tbody').querySelectorAll('tr')].map(tr=>{
-      const [nm,st,en,mn,mx]=[...tr.querySelectorAll('input:not(.am)')].map(i=>i.value);
+      const [nm,st,en]=[...tr.querySelectorAll('input:not(.am)')].map(i=>i.value);
       const e={name:nm||'?', start:+st, end:+en};
-      if(mn!=='') e.min_hours=+mn; if(mx!=='') e.max_hours=+mx;
       if(tr.querySelector('.am').checked) e.morning=true;
       return e;
     }).filter(e=>!isNaN(e.start)&&!isNaN(e.end));
@@ -429,7 +420,7 @@
       buildDemand();
       if(Array.isArray(data.employees)&&data.employees.length){
         $('#staff tbody').innerHTML='';
-        data.employees.forEach(e=>addRow([e.name||'?', e.start, e.end, e.min_hours??'', e.max_hours??'', !!e.morning]));
+        data.employees.forEach(e=>addRow([e.name||'?', e.start, e.end, !!e.morning]));
       }
       toast(`Loaded ${(data.employees||[]).length} people from link ✓`);
       return true;
