@@ -209,6 +209,9 @@
     <button class="btn-ghost" onclick="printAs('landscape')">Print Day (Landscape)</button>
     <button class="btn-primary" onclick="printWeek('landscape')">Print Week</button>
     <button class="btn-ghost" id="resetBtn">Reset to defaults</button>
+    <button class="btn-ghost" id="exportBtn" title="Download all days as a file">⬇ Backup</button>
+    <button class="btn-ghost" id="importBtn" title="Load days from a backup file">⬆ Restore</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
     <span class="saved" id="savedMsg">Saved ✓</span>
   </div>
 
@@ -257,7 +260,7 @@
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Floor staff: hit targets, max 1h30 gap, first in at 4 AM. DMs: 7/8 AM morning, last DM afternoon→close. ☀ AM-checked associates keep their morning start.</span>
+      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · clock-ins at most 1½h apart.</span>
     </div>
   </section>
   <section>
@@ -672,9 +675,11 @@ function showView(v){
 }
 
 /* ---- Optimizer ----
-   Floor staff: keep each shift length, re-time starts to hit clock-in targets, no gap > MAXGAP.
-   DMs are placed separately: never before DM_MIN; one morning, the last one afternoon (ends at CLOSE). */
-const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22;
+   Re-times each shift (length fixed) to fit the hourly clock-in targets on a
+   30-min grid, preferring placements close to the original time. Hard rules:
+   ☀ AM shifts must START before noon · DMs never before 7 AM ·
+   consecutive clock-ins at most 1.5h apart (locks win over the gap rule). */
+const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22, OVERSTAFF_PENALTY = 0.34;
 let preOptimize = null;
 function optimizeStarts(){
   const day = cur();
@@ -685,37 +690,40 @@ function optimizeStarts(){
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
 
-  // ---- floor staff (non-DM): fill the clock-in demand, cap gaps ----
-  // ☀ AM-locked associates are pinned: they keep their own morning start; only the rest move.
-  const floor = all.filter(p=>!p.dm && !p.am).sort((a,b)=> a.start-b.start);
-  const pinned = all.filter(p=>!p.dm && p.am);
-  const n = floor.length;
-  if(n){
-    const dem = state.demand || {};
-    let slots = [];
-    Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
-          .forEach(h=>{ for(let j=0;j<dem[h];j++) slots.push(h); });   // full count on the hour
-    slots = slots.filter(t=>t>=OPEN).sort((a,b)=>a-b);
-    // each AM-locked person already covers the demand slot nearest their start
-    pinned.forEach(p=>{ let bi=-1,bd=1e9; slots.forEach((t,j)=>{ const d=Math.abs(t-p.start); if(d<bd){bd=d;bi=j;} }); if(bi>=0) slots.splice(bi,1); });
-    if(slots.length>n) slots = slots.slice(0,n);
-    while(slots.length<n){ const last=slots.length?slots[slots.length-1]:OPEN; slots.push(Math.min(last+MAXGAP,21.5)); }
-    slots.sort((a,b)=>a-b);
-    if(!pinned.some(p=>p.start<=OPEN+0.5)) slots[0]=OPEN;   // first in at 4 AM unless an AM-locked opener covers it
-    for(let i=1;i<n;i++){ if(slots[i]-slots[i-1]>MAXGAP) slots[i]=slots[i-1]+MAXGAP; if(slots[i]<slots[i-1]) slots[i]=slots[i-1]; }
-    slots = slots.map(snap);
-    floor.forEach((p,k)=>{ day.shifts[p.i].start=fmt(slots[k]); day.shifts[p.i].end=fmt(slots[k]+p.len); });
+  const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
+  const h2i = h => Math.round((h-OPEN)*sph);
+  const dem = state.demand || {};
+  const eff = Array.from({length:n}, (_,k)=> +dem[Math.floor(OPEN+k/sph)]||0);
+  const coverage = Array(n).fill(0);
+  // least flexible first: ☀ AM (must land in the morning), then longest shifts
+  const order = [...all].sort((a,b)=>((a.am?0:1)-(b.am?0:1))||(b.len-a.len));
+  const placed = [];
+  for(const p of order){
+    const ws = Math.max(0, Math.min(h2i(p.start), n));
+    const len = Math.max(1, Math.min(Math.round(p.len*sph), n));
+    const lo = Math.min(p.dm ? Math.max(0,h2i(DM_MIN)) : 0, n-len);
+    const hi = p.am ? Math.min(n-len, Math.max(lo, h2i(12)-1)) : n-len;
+    let best=null;
+    for(let s=lo; s<=hi; s++){
+      let ben=0; for(let k=s;k<s+len;k++) ben += coverage[k]<eff[k] ? 1 : -OVERSTAFF_PENALTY;
+      const c=[ben, -Math.abs(s-ws), s];
+      if(!best||c[0]>best[0]||(c[0]===best[0]&&c[1]>best[1])) best=c;
+    }
+    placed.push({p, s:best[2], len});
+    for(let k=best[2]; k<best[2]+len; k++) coverage[k]++;
   }
-
-  // ---- DMs: 7/8am morning, last one afternoon (ends at close) so coverage runs open→close ----
-  // (an ☀ AM-locked DM is pinned too — left exactly where they are)
-  const dms = all.filter(p=>p.dm && !p.am).sort((a,b)=> a.start-b.start);
-  dms.forEach((p,k)=>{
-    const ns = (dms.length>=2 && k===dms.length-1)
-      ? snap(Math.max(DM_MIN, CLOSE - p.len))   // afternoon DM ends at close
-      : Math.min(DM_MIN + k, 8);                // morning DM(s): 7am, then 8am
-    day.shifts[p.i].start=fmt(ns); day.shifts[p.i].end=fmt(ns+p.len);
-  });
+  // hard rule: consecutive clock-ins never more than MAXGAP apart
+  const G = Math.round(MAXGAP*sph);
+  placed.sort((a,b)=>a.s-b.s);
+  for(let k=1;k<placed.length;k++){
+    const q=placed[k];
+    if(q.s-placed[k-1].s>G){
+      const lo = q.p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
+      const ns = Math.max(Math.min(placed[k-1].s+G, n-q.len), lo);
+      if(ns!==q.s){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
+    }
+  }
+  placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
 
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
@@ -765,6 +773,22 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
 });
 document.getElementById("optBtn").addEventListener("click", optimizeStarts);
 document.getElementById("undoOpt").addEventListener("click", undoOptimize);
+
+// ---- backup / restore (localStorage isn't shared between devices) ----
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,1)],{type:"application/json"}));
+  a.download="schedule-backup.json"; a.click(); URL.revokeObjectURL(a.href);
+});
+document.getElementById("importBtn").addEventListener("click", ()=>document.getElementById("importFile").click());
+document.getElementById("importFile").addEventListener("change", e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(t=>{ const s=JSON.parse(t); if(!s||!s.days) throw new Error("wrong shape");
+    if(!confirm(`Replace everything with this backup (${s.days.length} day(s))?`)) return;
+    state=s; state.active=Math.min(state.active||0, state.days.length-1); save(); renderAll(); })
+   .catch(()=>alert("Not a valid backup file."));
+  e.target.value="";
+});
 document.getElementById("optPreview").addEventListener("input", e=>{   // notes editable in preview too
   const oi=e.target.dataset.oi; if(oi==null) return; cur().shifts[oi].note = e.target.value;
 });
