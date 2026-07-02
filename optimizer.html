@@ -58,7 +58,7 @@
           <h2 class="h">3 · Staff <span class="muted">(transcribe from the image)</span></h2>
           <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must stay in the morning — their start doesn't move.</p>
           <table class="grid" id="staff">
-            <thead><tr><th>Name</th><th>Start</th><th>End</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Start</th><th>End</th><th title="Department Manager — never starts before 7 AM">DM</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
           <button class="btn btn-secondary sm" id="addRow">＋ add person</button>
@@ -222,9 +222,11 @@
       }
       // The parsed start/end IS the shift: its length is fixed, only its
       // position moves. AM-locked people keep their start exactly.
+      // DMs never start before 7 AM (an AM-locked DM earlier than 7 is bumped to 7).
       const len = Math.min(we - ws, n);
-      const starts = emp.morning ? [Math.min(ws, n - len)]
-        : Array.from({length: n - len + 1}, (_, k) => k);
+      const lo = Math.min(emp.dm ? Math.max(0, h2i(7)) : 0, n - len);
+      const starts = emp.morning ? [Math.min(Math.max(ws, lo), n - len)]
+        : Array.from({length: n - len - lo + 1}, (_, k) => lo + k);
       let best = null;  // [benefit, -distance from original start], lexicographic
       for(const s of starts){
         let benefit = 0;
@@ -242,6 +244,7 @@
         end: Math.round((openH + e / sph) * 100) / 100,
         hours: Math.round(len / sph * 100) / 100,
         morning: !!emp.morning,
+        dm: !!emp.dm,
       });
     }
 
@@ -314,26 +317,28 @@
     return d+(mn?':'+String(mn).padStart(2,'0'):'')+ap;
   }
   const seed=[
-    ['Opener A','4am','12pm',true],['Opener B','4am','12pm',true],
+    ['Opener A','4am','12pm',false,true],['Opener B','4am','12pm',false,true],
     ['Mid C','9am','5pm'],['Mid D','10am','6pm'],['Mid E','11am','7pm'],
     ['Close F','2pm','10pm'],['Close G','2pm','10pm'],['Close H','4pm','10pm'],
   ];
-  function addRow(r=['','9am','5pm',false]){
+  function addRow(r=['','9am','5pm',false,false]){
     const tb=$('#staff tbody'), tr=document.createElement('tr');
     tr.innerHTML=`<td class="tname"><input value="${r[0]}" placeholder="name"></td>
       <td><input value="${r[1]}" placeholder="4am"></td>
       <td><input value="${r[2]}" placeholder="12:30pm"></td>
-      <td><input type="checkbox" class="am" title="must stay in the morning" ${r[3]?'checked':''}></td>
+      <td><input type="checkbox" class="dm" title="Department Manager — never starts before 7 AM" ${r[3]?'checked':''}></td>
+      <td><input type="checkbox" class="am" title="must stay in the morning" ${r[4]?'checked':''}></td>
       <td><button class="del" title="remove">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>tr.remove();
     tb.appendChild(tr);
   }
   function readStaff(){
     return [...$('#staff tbody').querySelectorAll('tr')].map(tr=>{
-      const [nm,st,en]=[...tr.querySelectorAll('input:not(.am)')].map(i=>i.value);
+      const [nm,st,en]=[...tr.querySelectorAll('input:not(.am):not(.dm)')].map(i=>i.value);
       const e={name:nm||'?', start:parseT(st), end:parseT(en)};
       // "4-12:30" without am/pm: an end at-or-before the start means it crossed noon
       if(!isNaN(e.start)&&!isNaN(e.end)&&e.end<=e.start&&e.end+12<=24) e.end+=12;
+      if(tr.querySelector('.dm').checked) e.dm=true;
       if(tr.querySelector('.am').checked) e.morning=true;
       return e;
     }).filter(e=>!isNaN(e.start)&&!isNaN(e.end));
@@ -436,7 +441,7 @@
       buildDemand();
       if(Array.isArray(data.employees)&&data.employees.length){
         $('#staff tbody').innerHTML='';
-        data.employees.forEach(e=>addRow([e.name||'?', fmtIn(e.start), fmtIn(e.end), !!e.morning]));
+        data.employees.forEach(e=>addRow([e.name||'?', fmtIn(e.start), fmtIn(e.end), !!e.dm, !!e.morning]));
       }
       toast(`Loaded ${(data.employees||[]).length} people from link ✓`);
       return true;
