@@ -56,7 +56,7 @@
         <!-- 3 · staff -->
         <section class="card sec">
           <h2 class="h">3 · Staff <span class="muted">(transcribe from the image)</span></h2>
-          <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must stay in the morning — their start doesn't move.</p>
+          <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must stay in the morning — their start doesn't move. <b>DM</b>s never start before 7 AM, and clock-ins are kept at most 1½ hours apart.</p>
           <table class="grid" id="staff">
             <thead><tr><th>Name</th><th>Start</th><th>End</th><th title="Department Manager — never starts before 7 AM">DM</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
             <tbody></tbody>
@@ -236,17 +236,35 @@
         if(!best || cand[0] > best[0] ||
            (cand[0] === best[0] && cand[1] > best[1])) best = cand;
       }
-      const s = best[2], e = s + len;
-      for(let i = s; i < e; i++) coverage[i]++;
-      assignments.push({
-        name: emp.name || `#${idx+1}`,
-        start: Math.round((openH + s / sph) * 100) / 100,
-        end: Math.round((openH + e / sph) * 100) / 100,
-        hours: Math.round(len / sph * 100) / 100,
-        morning: !!emp.morning,
-        dm: !!emp.dm,
-      });
+      const s = best[2];
+      for(let i = s; i < s + len; i++) coverage[i]++;
+      assignments.push({ name: emp.name || `#${idx+1}`, s, len, morning: !!emp.morning, dm: !!emp.dm });
     }
+
+    // ---- hard rule: consecutive clock-ins never more than 1.5h apart ----
+    // Later starts get pulled earlier to close the gap. AM-locked starts can't
+    // move, and DMs still never land before 7 AM (those two rules win over the gap).
+    const G = Math.round(1.5 * sph);
+    const placed = assignments.filter(a => a.len > 0);
+    placed.sort((a, b) => a.s - b.s);
+    for(let k = 1; k < placed.length; k++){
+      const p = placed[k];
+      if(p.s - placed[k-1].s > G && !p.morning){
+        const dmLo = p.dm ? Math.max(0, h2i(7)) : 0;
+        const ns = Math.max(Math.min(placed[k-1].s + G, n - p.len), dmLo);
+        if(ns !== p.s){ p.s = ns; placed.sort((a, b) => a.s - b.s); k = 0; }  // tiny list; rescan
+      }
+    }
+    coverage.fill(0);
+    placed.forEach(p => { for(let i = p.s; i < p.s + p.len; i++) coverage[i]++; });
+    assignments.forEach(a => {
+      if(a.len > 0){
+        a.start = Math.round((openH + a.s / sph) * 100) / 100;
+        a.end   = Math.round((openH + (a.s + a.len) / sph) * 100) / 100;
+        a.hours = Math.round(a.len / sph * 100) / 100;
+      }
+      delete a.s; delete a.len;
+    });
 
     const gaps = effDemand.map((d, i) => Math.max(0, d - coverage[i]));
     const over = effDemand.map((d, i) => Math.max(0, coverage[i] - d));
@@ -362,8 +380,10 @@
   let lastResult=null;
   function toast(m){ const t=document.createElement('div'); t.className='toast'; t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
   function optimize(){
-    const body={ open:+$('#open').value, close:+$('#close').value, slot_minutes:60,
-      min_staff:+$('#minStaff').value, demand:demandVals.slice(0,slotCount()), employees:readStaff() };
+    // 30-min internal grid so shifts can land on half hours and the 1.5h
+    // clock-in gap cap is exact; the demand inputs stay per-hour (doubled up).
+    const body={ open:+$('#open').value, close:+$('#close').value, slot_minutes:30,
+      min_staff:+$('#minStaff').value, demand:demandVals.slice(0,slotCount()).flatMap(d=>[d,d]), employees:readStaff() };
     if(!body.employees.length){ toast('Add at least one person.'); return; }
     try{ lastResult=optimizeLocal(body); }
     catch(err){ toast('Error: '+err.message); return; }
