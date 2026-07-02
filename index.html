@@ -666,8 +666,7 @@ function renderOptimize(){
   document.getElementById("optPreview").innerHTML = GRID_HEAD + `<tbody>${shiftRows(people)}</tbody>`;
 }
 function showView(v){
-  if(v==="optimize"){ location.replace("optimizer.html"); return; }  // old in-page view superseded by the optimizer page
-  v = "schedule";
+  v = (v==="optimize") ? "optimize" : "schedule";
   document.getElementById("view-schedule").style.display = v==="optimize" ? "none" : "";
   document.getElementById("view-optimize").style.display = v==="optimize" ? "" : "none";
   document.querySelectorAll(".vbtn").forEach(b=>b.classList.toggle("active", b.dataset.view===v));
