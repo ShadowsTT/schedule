@@ -708,20 +708,27 @@ function optimizeStarts(){
   const want = [];
   Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
     .forEach(h=>{ for(let j=0;j<dem[h];j++) want.push(Math.max(0,Math.min(h2i(h),n-1))); });
-  // Most-constrained first (☀ AM, then DM, then longest); each takes the
-  // nearest eligible target slot. No eligible slot left -> stay near original.
-  const order = [...all].sort((a,b)=>((a.am?0:1)-(b.am?0:1))||((a.dm?0:1)-(b.dm?0:1))||(b.len-a.len));
-  const placed = [];
-  for(const p of order){
-    const ws = Math.max(0, Math.min(h2i(p.start), n));
+  // Fill target slots in TIME ORDER: each slot takes the closest still-unplaced
+  // eligible person. Early targets (4A, 5A…) are satisfied first, so when there
+  // are more target slots than people, the shortfall lands at the end of the day.
+  const pool = [...all].map(p=>{
     const len = Math.max(1, Math.min(Math.round(p.len*sph), n));
     const lo = Math.min(p.dm ? Math.max(0,h2i(DM_MIN)) : 0, n-len);
     const hi = p.am ? Math.min(n-len, Math.max(lo, h2i(12)-1)) : n-len;
+    const ws = Math.max(0, Math.min(h2i(p.start), n));
+    return {p, len, lo, hi, ws};
+  });
+  const placed = [];
+  want.sort((a,b)=>a-b);
+  for(const t of want){
     let bi=-1, bd=1e9;
-    want.forEach((t,j)=>{ if(t<lo||t>hi) return; const d=Math.abs(t-ws); if(d<bd){bd=d;bi=j;} });
-    const s = bi>=0 ? want.splice(bi,1)[0] : Math.max(lo, Math.min(ws, hi));
-    placed.push({p, s, len});
+    pool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; const d=Math.abs(t-c.ws); if(d<bd){bd=d;bi=j;} });
+    if(bi<0) continue;                                   // nobody can legally take this slot
+    const c = pool.splice(bi,1)[0];
+    placed.push({p:c.p, s:t, len:c.len});
   }
+  // more people than slots: leftovers stay as close to their current time as the rules allow
+  pool.forEach(c=> placed.push({p:c.p, s:Math.max(c.lo, Math.min(c.ws, c.hi)), len:c.len}));
   // hard rule: consecutive clock-ins never more than MAXGAP apart
   const G = Math.round(MAXGAP*sph);
   placed.sort((a,b)=>a.s-b.s);
