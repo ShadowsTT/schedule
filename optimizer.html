@@ -298,17 +298,31 @@
   }
   ['#open','#close'].forEach(s=>$(s).addEventListener('change',buildDemand));
 
-  // ---- staff table ----
+  // ---- staff table (times are 12-hour text: "4am", "12:30pm") ----
+  function parseT(v){
+    v=String(v).trim().toLowerCase().replace(/\s+/g,'');
+    const m=v.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)?$/);
+    if(!m) return NaN;
+    let h=+m[1]; const mn=m[2]?+m[2]:0;
+    if(h>23||mn>59) return NaN;
+    if(m[3]==='am'){ if(h===12) h=0; } else if(m[3]==='pm'){ if(h!==12) h+=12; }
+    return h+mn/60;
+  }
+  function fmtIn(h){
+    h=((h%24)+24)%24; const hr=Math.floor(h), mn=Math.round((h-hr)*60);
+    const ap=hr<12?'am':'pm'; const d=hr%12||12;
+    return d+(mn?':'+String(mn).padStart(2,'0'):'')+ap;
+  }
   const seed=[
-    ['Opener A',4,12,true],['Opener B',4,12,true],
-    ['Mid C',9,17],['Mid D',10,18],['Mid E',11,19],
-    ['Close F',14,22],['Close G',14,22],['Close H',16,22],
+    ['Opener A','4am','12pm',true],['Opener B','4am','12pm',true],
+    ['Mid C','9am','5pm'],['Mid D','10am','6pm'],['Mid E','11am','7pm'],
+    ['Close F','2pm','10pm'],['Close G','2pm','10pm'],['Close H','4pm','10pm'],
   ];
-  function addRow(r=['',9,17,false]){
+  function addRow(r=['','9am','5pm',false]){
     const tb=$('#staff tbody'), tr=document.createElement('tr');
     tr.innerHTML=`<td class="tname"><input value="${r[0]}" placeholder="name"></td>
-      <td><input type="number" step="0.5" value="${r[1]}"></td>
-      <td><input type="number" step="0.5" value="${r[2]}"></td>
+      <td><input value="${r[1]}" placeholder="4am"></td>
+      <td><input value="${r[2]}" placeholder="12:30pm"></td>
       <td><input type="checkbox" class="am" title="must stay in the morning" ${r[3]?'checked':''}></td>
       <td><button class="del" title="remove">✕</button></td>`;
     tr.querySelector('.del').onclick=()=>tr.remove();
@@ -317,7 +331,9 @@
   function readStaff(){
     return [...$('#staff tbody').querySelectorAll('tr')].map(tr=>{
       const [nm,st,en]=[...tr.querySelectorAll('input:not(.am)')].map(i=>i.value);
-      const e={name:nm||'?', start:+st, end:+en};
+      const e={name:nm||'?', start:parseT(st), end:parseT(en)};
+      // "4-12:30" without am/pm: an end at-or-before the start means it crossed noon
+      if(!isNaN(e.start)&&!isNaN(e.end)&&e.end<=e.start&&e.end+12<=24) e.end+=12;
       if(tr.querySelector('.am').checked) e.morning=true;
       return e;
     }).filter(e=>!isNaN(e.start)&&!isNaN(e.end));
@@ -420,7 +436,7 @@
       buildDemand();
       if(Array.isArray(data.employees)&&data.employees.length){
         $('#staff tbody').innerHTML='';
-        data.employees.forEach(e=>addRow([e.name||'?', e.start, e.end, !!e.morning]));
+        data.employees.forEach(e=>addRow([e.name||'?', fmtIn(e.start), fmtIn(e.end), !!e.morning]));
       }
       toast(`Loaded ${(data.employees||[]).length} people from link ✓`);
       return true;
