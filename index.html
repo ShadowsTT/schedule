@@ -256,6 +256,8 @@
       <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
     </div>
     <div class="gridscroll"><table class="cov" id="cov"></table></div>
+    <h2 style="margin-top:20px"><span class="ico">🔒</span>Per-associate rules <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— tick ☀ for who must be in the morning</span></h2>
+    <table class="grid" id="flags" style="max-width:520px"></table>
     <div class="optbar">
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
@@ -662,8 +664,18 @@ function refreshSched(){
 }
 function renderOptimize(){
   renderCoverage();
+  renderFlags();
   const { people } = compute();
   document.getElementById("optPreview").innerHTML = GRID_HEAD + `<tbody>${shiftRows(people)}</tbody>`;
+}
+function renderFlags(){
+  document.getElementById("flags").innerHTML =
+    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th></tr></thead><tbody>` +
+    cur().shifts.map((s,i)=>`<tr>
+      <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}</td>
+      <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
+      <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
+    </tr>`).join("") + `</tbody>`;
 }
 function showView(v){
   v = (v==="optimize") ? "optimize" : "schedule";
@@ -691,25 +703,24 @@ function optimizeStarts(){
 
   const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
   const h2i = h => Math.round((h-OPEN)*sph);
+  // The grid is CLOCK-IN targets: expand {hour: count} into start slots.
   const dem = state.demand || {};
-  const eff = Array.from({length:n}, (_,k)=> +dem[Math.floor(OPEN+k/sph)]||0);
-  const coverage = Array(n).fill(0);
-  // least flexible first: ☀ AM (must land in the morning), then longest shifts
-  const order = [...all].sort((a,b)=>((a.am?0:1)-(b.am?0:1))||(b.len-a.len));
+  const want = [];
+  Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
+    .forEach(h=>{ for(let j=0;j<dem[h];j++) want.push(Math.max(0,Math.min(h2i(h),n-1))); });
+  // Most-constrained first (☀ AM, then DM, then longest); each takes the
+  // nearest eligible target slot. No eligible slot left -> stay near original.
+  const order = [...all].sort((a,b)=>((a.am?0:1)-(b.am?0:1))||((a.dm?0:1)-(b.dm?0:1))||(b.len-a.len));
   const placed = [];
   for(const p of order){
     const ws = Math.max(0, Math.min(h2i(p.start), n));
     const len = Math.max(1, Math.min(Math.round(p.len*sph), n));
     const lo = Math.min(p.dm ? Math.max(0,h2i(DM_MIN)) : 0, n-len);
     const hi = p.am ? Math.min(n-len, Math.max(lo, h2i(12)-1)) : n-len;
-    let best=null;
-    for(let s=lo; s<=hi; s++){
-      let ben=0; for(let k=s;k<s+len;k++) ben += coverage[k]<eff[k] ? 1 : -OVERSTAFF_PENALTY;
-      const c=[ben, -Math.abs(s-ws), s];
-      if(!best||c[0]>best[0]||(c[0]===best[0]&&c[1]>best[1])) best=c;
-    }
-    placed.push({p, s:best[2], len});
-    for(let k=best[2]; k<best[2]+len; k++) coverage[k]++;
+    let bi=-1, bd=1e9;
+    want.forEach((t,j)=>{ if(t<lo||t>hi) return; const d=Math.abs(t-ws); if(d<bd){bd=d;bi=j;} });
+    const s = bi>=0 ? want.splice(bi,1)[0] : Math.max(lo, Math.min(ws, hi));
+    placed.push({p, s, len});
   }
   // hard rule: consecutive clock-ins never more than MAXGAP apart
   const G = Math.round(MAXGAP*sph);
@@ -772,6 +783,11 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
 });
 document.getElementById("optBtn").addEventListener("click", optimizeStarts);
 document.getElementById("undoOpt").addEventListener("click", undoOptimize);
+document.getElementById("flags").addEventListener("change", e=>{
+  const i=e.target.dataset.fi, k=e.target.dataset.fk;
+  if(i==null) return;
+  cur().shifts[i][k]=e.target.checked; save(); renderAll();
+});
 
 // ---- backup / restore (localStorage isn't shared between devices) ----
 document.getElementById("exportBtn").addEventListener("click", ()=>{
