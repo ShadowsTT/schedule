@@ -670,11 +670,12 @@ function renderOptimize(){
 }
 function renderFlags(){
   document.getElementById("flags").innerHTML =
-    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th></tr></thead><tbody>` +
+    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="col-actions"></th></tr></thead><tbody>` +
     cur().shifts.map((s,i)=>`<tr>
       <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
+      <td class="col-actions"><button class="btn-x" data-fdel="${i}" title="Remove from this day">✕</button></td>
     </tr>`).join("") + `</tbody>`;
 }
 function showView(v){
@@ -794,6 +795,11 @@ document.getElementById("flags").addEventListener("change", e=>{
   const i=e.target.dataset.fi, k=e.target.dataset.fk;
   if(i==null) return;
   cur().shifts[i][k]=e.target.checked; save(); renderAll();
+});
+document.getElementById("flags").addEventListener("click", e=>{
+  const d=e.target.dataset.fdel;
+  if(d==null) return;
+  cur().shifts.splice(+d,1); save(); renderAll();
 });
 
 // ---- backup / restore (localStorage isn't shared between devices) ----
