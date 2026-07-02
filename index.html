@@ -91,7 +91,7 @@
   .cov td.covcell.met   { background:#dcfce7; color:#166534; }
   .optbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:14px; }
   .viewnav { display:flex; gap:6px; padding:14px 36px 0; border-bottom:1px solid var(--line); }
-  .vbtn { background:#eef2f7; color:var(--muted); border-radius:9px 9px 0 0; padding:11px 18px; font-weight:700; }
+  .vbtn { background:#eef2f7; color:var(--muted); border-radius:9px 9px 0 0; padding:11px 18px; font-weight:700; text-decoration:none; display:inline-block; font-size:inherit; }
   .vbtn:hover { background:#e2e8f0; }
   .vbtn.active { background:#fff; color:var(--accent); box-shadow:inset 0 -3px 0 var(--accent); }
   .gridscroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
@@ -190,7 +190,7 @@
 
   <nav class="viewnav">
     <button class="vbtn active" data-view="schedule">📋 Schedule</button>
-    <button class="vbtn" data-view="optimize">🎯 Coverage &amp; Optimize</button>
+    <a class="vbtn" href="optimizer.html">🎯 Optimizer</a>
   </nav>
 
   <div id="view-schedule">
@@ -662,7 +662,8 @@ function renderOptimize(){
   document.getElementById("optPreview").innerHTML = GRID_HEAD + `<tbody>${shiftRows(people)}</tbody>`;
 }
 function showView(v){
-  v = (v==="optimize") ? "optimize" : "schedule";
+  if(v==="optimize"){ location.replace("optimizer.html"); return; }  // old in-page view superseded by the optimizer page
+  v = "schedule";
   document.getElementById("view-schedule").style.display = v==="optimize" ? "none" : "";
   document.getElementById("view-optimize").style.display = v==="optimize" ? "" : "none";
   document.querySelectorAll(".vbtn").forEach(b=>b.classList.toggle("active", b.dataset.view===v));
@@ -762,7 +763,7 @@ document.getElementById("optPreview").addEventListener("input", e=>{   // notes 
 });
 document.getElementById("saveBtn").addEventListener("click", save);
 document.getElementById("saveBtn2").addEventListener("click", save);
-document.querySelectorAll(".vbtn").forEach(b=> b.addEventListener("click", ()=> showView(b.dataset.view)));
+document.querySelectorAll(".vbtn[data-view]").forEach(b=> b.addEventListener("click", ()=> showView(b.dataset.view)));
 window.addEventListener("hashchange", ()=> showView(location.hash.slice(1)));
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   if(confirm("Reset to the original schedule? Your edits will be lost.")){
