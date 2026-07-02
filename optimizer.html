@@ -56,7 +56,7 @@
         <!-- 3 · staff -->
         <section class="card sec">
           <h2 class="h">3 · Staff <span class="muted">(transcribe from the image)</span></h2>
-          <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must stay in the morning — their start doesn't move. <b>DM</b>s never start before 7 AM, and clock-ins are kept at most 1½ hours apart.</p>
+          <p class="field-hint">Who's working that day and their shift from the image. Optimize keeps each shift's <em>length</em> and re-times it to match demand. Tick <b>AM</b> for associates who must work the morning — their shift is placed to start before noon. <b>DM</b>s never start before 7 AM, and clock-ins are kept at most 1½ hours apart.</p>
           <table class="grid" id="staff">
             <thead><tr><th>Name</th><th>Start</th><th>End</th><th title="Department Manager — never starts before 7 AM">DM</th><th title="Must stay in the morning">AM</th><th></th></tr></thead>
             <tbody></tbody>
@@ -183,7 +183,7 @@
   // Greedy shift RE-TIMING: each person's parsed start/end is a fixed-length
   // shift; the optimizer slides it to fill the most still-uncovered demand,
   // lightly penalising overstaffing. Ties prefer the smallest move from the
-  // original start. AM-locked shifts don't move at all.
+  // original start. AM-checked shifts must start before noon.
   // ponytail: 0.34 overstaff penalty is the one tuning knob — raise it to spread
   // people thinner (less overlap), lower it to pack shifts onto peak hours.
   const OVERSTAFF_PENALTY = 0.34;
@@ -221,12 +221,12 @@
         continue;
       }
       // The parsed start/end IS the shift: its length is fixed, only its
-      // position moves. AM-locked people keep their start exactly.
-      // DMs never start before 7 AM (an AM-locked DM earlier than 7 is bumped to 7).
+      // position moves. AM-checked people must be IN the morning: their shift
+      // has to start before noon. DMs never start before 7 AM.
       const len = Math.min(we - ws, n);
       const lo = Math.min(emp.dm ? Math.max(0, h2i(7)) : 0, n - len);
-      const starts = emp.morning ? [Math.min(Math.max(ws, lo), n - len)]
-        : Array.from({length: n - len - lo + 1}, (_, k) => lo + k);
+      const hi = emp.morning ? Math.min(n - len, Math.max(lo, h2i(12) - 1)) : n - len;
+      const starts = Array.from({length: hi - lo + 1}, (_, k) => lo + k);
       let best = null;  // [benefit, -distance from original start], lexicographic
       for(const s of starts){
         let benefit = 0;
@@ -242,14 +242,14 @@
     }
 
     // ---- hard rule: consecutive clock-ins never more than 1.5h apart ----
-    // Later starts get pulled earlier to close the gap. AM-locked starts can't
-    // move, and DMs still never land before 7 AM (those two rules win over the gap).
+    // Later starts get pulled earlier to close the gap (earlier is always fine
+    // for AM people). DMs still never land before 7 AM — that rule wins.
     const G = Math.round(1.5 * sph);
     const placed = assignments.filter(a => a.len > 0);
     placed.sort((a, b) => a.s - b.s);
     for(let k = 1; k < placed.length; k++){
       const p = placed[k];
-      if(p.s - placed[k-1].s > G && !p.morning){
+      if(p.s - placed[k-1].s > G){
         const dmLo = p.dm ? Math.max(0, h2i(7)) : 0;
         const ns = Math.max(Math.min(placed[k-1].s + G, n - p.len), dmLo);
         if(ns !== p.s){ p.s = ns; placed.sort((a, b) => a.s - b.s); k = 0; }  // tiny list; rescan
