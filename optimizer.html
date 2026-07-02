@@ -416,9 +416,28 @@
   };
   $('#print').onclick=()=>window.print();
 
+  // ---- prefill from a #d= link (base64url JSON: {open,close,demand,employees}) ----
+  // Workflow: paste the schedule image to Claude in chat; it parses and hands
+  // back a link that opens this page with everything filled in — no API needed.
+  function loadHash(){
+    const m=location.hash.match(/[#&]d=([A-Za-z0-9_-]+=*)/); if(!m) return false;
+    try{
+      const data=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if(Number.isFinite(data.open)) $('#open').value=data.open;
+      if(Number.isFinite(data.close)) $('#close').value=data.close;
+      if(Array.isArray(data.demand)&&data.demand.length) demandVals=data.demand.map(n=>+n||0);
+      buildDemand();
+      if(Array.isArray(data.employees)&&data.employees.length){
+        $('#staff tbody').innerHTML='';
+        data.employees.forEach(e=>addRow([e.name||'?', e.start, e.end, e.min_hours??'', e.max_hours??'', !!e.morning]));
+      }
+      toast(`Loaded ${(data.employees||[]).length} people from link ✓`);
+      return true;
+    }catch(err){ toast('Could not read #d= link: '+err.message); return false; }
+  }
+
   // ---- init ----
-  buildDemand();
-  seed.forEach(addRow);
+  if(!loadHash()){ buildDemand(); seed.forEach(addRow); }
   </script>
 </body>
 </html>
