@@ -190,14 +190,14 @@
 
   <nav class="viewnav">
     <button class="vbtn active" data-view="schedule">📋 Schedule</button>
-    <a class="vbtn" href="optimizer.html">🎯 Optimizer</a>
+    <button class="vbtn" data-view="optimize">🎯 Optimizer</button>
   </nav>
 
   <div id="view-schedule">
   <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
-      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="c">DM</th><th class="col-actions"></th></tr></thead>
+      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="c">DM</th><th class="c" title="Must stay in the morning">☀ AM</th><th class="col-actions"></th></tr></thead>
       <tbody id="editBody"></tbody>
     </table>
   </section>
@@ -257,7 +257,7 @@
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Floor staff: hit targets, max 1h30 gap, first in at 4 AM. DMs: 7/8 AM morning, last DM afternoon→close.</span>
+      <span class="empty" style="font-style:normal">Floor staff: hit targets, max 1h30 gap, first in at 4 AM. DMs: 7/8 AM morning, last DM afternoon→close. ☀ AM-checked associates keep their morning start.</span>
     </div>
   </section>
   <section>
@@ -531,7 +531,7 @@ function compute(shifts){
         const ok = start!=null&&end!=null&&end>start;
         const idx = ok ? (seen[start]=(seen[start]||0)+1)-1 : 0;
         const breaks = ok ? makeBreaks(start,end, idx*STAGGER) : [];
-        return { oi:i, name:s.name||"(unnamed)", start, end, dm:!!s.dm, note:s.note||"", breaks, disp:0, slots:[], tasks:[] };
+        return { oi:i, name:s.name||"(unnamed)", start, end, dm:!!s.dm, am:!!s.am, note:s.note||"", breaks, disp:0, slots:[], tasks:[] };
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
@@ -568,6 +568,7 @@ function renderEditor(){
       <td class="t"><input data-i="${i}" data-k="start" value="${s.start||""}" placeholder="4:00am"></td>
       <td class="t"><input data-i="${i}" data-k="end" value="${s.end||""}" placeholder="12:30pm"></td>
       <td class="c"><input type="checkbox" data-i="${i}" data-k="dm" ${s.dm?"checked":""} title="Department Manager"></td>
+      <td class="c"><input type="checkbox" data-i="${i}" data-k="am" ${s.am?"checked":""} title="Must stay in the morning"></td>
       <td class="col-actions"><button class="btn-x" data-del="${i}" title="Remove">✕</button></td>
     </tr>`).join("");
 }
@@ -601,7 +602,7 @@ function shiftRows(people){
     const lunch = p.breaks.find(b=>b.label==="Lunch");
     const hrs = (p.end-p.start) - (lunch?lunch.end-lunch.start:0);   // lunch unpaid
     return `<tr>
-      <td class="name">${p.name}</td>
+      <td class="name">${p.am?"☀ ":""}${p.name}</td>
       <td class="c">${fmt(p.start)}</td><td class="c">${fmt(p.end)}</td>
       <td class="c hrs">${(Math.round(hrs*4)/4).toString().replace(/\.5$/,"½").replace(/\.25$/,"¼").replace(/\.75$/,"¾")}h</td>
       <td class="c brk">${rng(brks[0])}</td>
@@ -679,13 +680,15 @@ function optimizeStarts(){
   const day = cur();
   const all=[];
   day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
-    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm }); });
+    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am }); });
   if(all.length<2){ alert("Need at least 2 valid shifts to optimize."); return; }
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
 
   // ---- floor staff (non-DM): fill the clock-in demand, cap gaps ----
-  const floor = all.filter(p=>!p.dm).sort((a,b)=> a.start-b.start);
+  // ☀ AM-locked associates are pinned: they keep their own morning start; only the rest move.
+  const floor = all.filter(p=>!p.dm && !p.am).sort((a,b)=> a.start-b.start);
+  const pinned = all.filter(p=>!p.dm && p.am);
   const n = floor.length;
   if(n){
     const dem = state.demand || {};
@@ -693,16 +696,20 @@ function optimizeStarts(){
     Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
           .forEach(h=>{ for(let j=0;j<dem[h];j++) slots.push(h); });   // full count on the hour
     slots = slots.filter(t=>t>=OPEN).sort((a,b)=>a-b);
+    // each AM-locked person already covers the demand slot nearest their start
+    pinned.forEach(p=>{ let bi=-1,bd=1e9; slots.forEach((t,j)=>{ const d=Math.abs(t-p.start); if(d<bd){bd=d;bi=j;} }); if(bi>=0) slots.splice(bi,1); });
     if(slots.length>n) slots = slots.slice(0,n);
     while(slots.length<n){ const last=slots.length?slots[slots.length-1]:OPEN; slots.push(Math.min(last+MAXGAP,21.5)); }
-    slots.sort((a,b)=>a-b); slots[0]=OPEN;
+    slots.sort((a,b)=>a-b);
+    if(!pinned.some(p=>p.start<=OPEN+0.5)) slots[0]=OPEN;   // first in at 4 AM unless an AM-locked opener covers it
     for(let i=1;i<n;i++){ if(slots[i]-slots[i-1]>MAXGAP) slots[i]=slots[i-1]+MAXGAP; if(slots[i]<slots[i-1]) slots[i]=slots[i-1]; }
     slots = slots.map(snap);
     floor.forEach((p,k)=>{ day.shifts[p.i].start=fmt(slots[k]); day.shifts[p.i].end=fmt(slots[k]+p.len); });
   }
 
   // ---- DMs: 7/8am morning, last one afternoon (ends at close) so coverage runs open→close ----
-  const dms = all.filter(p=>p.dm).sort((a,b)=> a.start-b.start);
+  // (an ☀ AM-locked DM is pinned too — left exactly where they are)
+  const dms = all.filter(p=>p.dm && !p.am).sort((a,b)=> a.start-b.start);
   dms.forEach((p,k)=>{
     const ns = (dms.length>=2 && k===dms.length-1)
       ? snap(Math.max(DM_MIN, CLOSE - p.len))   // afternoon DM ends at close
@@ -808,6 +815,26 @@ function printWeek(orient){
   document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
   window.print();
 }
+
+// ---- prefill from a #d= link (Claude parses a schedule image in chat, no API) ----
+// Payload: base64url JSON {date?, open?, demand?[], employees[{name,start,end,dm?,morning?}]}
+(function(){
+  const m=location.hash.match(/[#&]d=([A-Za-z0-9_-]+=*)/); if(!m) return;
+  try{
+    const d=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
+    const date=d.date||"Imported day";
+    const shifts=(d.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning }));
+    if(shifts.length){
+      let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
+      if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
+      state.active=i;
+    }
+    if(Array.isArray(d.demand)&&Number.isFinite(d.open))
+      d.demand.forEach((v,k)=>{ if(v>0) state.demand[d.open+k]=v; });
+    save();
+    history.replaceState(null,"",location.pathname+"#schedule");
+  }catch(e){ console.warn("bad #d= payload", e); }
+})();
 
 renderAll();
 showView(location.hash.slice(1));
