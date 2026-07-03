@@ -832,7 +832,12 @@ function renderCoverage(){
   const head = `<thead><tr><th class="rowname">Hour</th>${COV_HRS.map(h=>`<th>${compactH(h)}</th>`).join("")}</tr></thead>`;
   const tRow = `<tr><td class="rowname">Target in</td>${COV_HRS.map(h=>`<td><input class="dem" type="number" min="0" data-h="${h}" value="${dem[h]??""}" placeholder="–"></td>`).join("")}</tr>`;
   const sRow = `<tr id="covSched"><td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}</tr>`;
-  document.getElementById("cov").innerHTML = head + `<tbody>${tRow}${sRow}</tbody>`;
+  const spans = cur().shifts.map(s=>[parseTime(s.start), parseTime(s.end)]).filter(x=>x[0]!=null&&x[1]!=null&&x[1]>x[0]);
+  const onAt = x => spans.filter(v=>v[0]<=x && v[1]>x).length;
+  const fRow = `<tr><td class="rowname">On floor</td>${COV_HRS.map(h=>{
+    const c=Math.min(onAt(h), onAt(h+0.5));
+    return `<td class="covcell ${c===0?"under":"met"}">${c}</td>`; }).join("")}</tr>`;
+  document.getElementById("cov").innerHTML = head + `<tbody>${tRow}${sRow}${fRow}</tbody>`;
 }
 function refreshSched(){
   const starts = schedStarts();
@@ -1044,6 +1049,39 @@ function optimizeDay(di){
     }
   }
   }
+  // ---- floor presence: every 30-min slot needs someone in; repair or report ----
+  const present = k => placed.some(x=>x.s<=k && k<x.s+x.len);
+  const holes=[];
+  const k0 = tSlots.length ? tSlots[0] : 0;        // coverage expected from the FIRST target hour to close
+  for(let k=k0;k<n;k++){
+    if(present(k)) continue;
+    let best=null;
+    placed.forEach(q=>{                              // cheapest movable person who could cover slot k
+      if(q.fix) return;
+      let hi2=Math.min(q.hi!=null?q.hi:(n-q.len), k, n-q.len);
+      if(q.p.am) hi2=Math.min(hi2, Math.max(q.lo, h2i(12)-1));   // morning rule still wins
+      const lo2=Math.max(q.lo, k+1-q.len);
+      if(lo2>hi2) return;
+      const s2=Math.max(lo2, Math.min(hi2, q.s));
+      if(s2===q.s) return;
+      if(apartClash(day.shifts[q.p.i].name, s2, q.len, q)) return;
+      const cost=Math.abs(s2-q.s);
+      if(!best||cost<best.cost) best={q,s2,cost};
+    });
+    if(best){
+      const old=best.q.s; best.q.s=best.s2;
+      let ok=true; for(let j=k0;j<k;j++){ if(!present(j)){ ok=false; break; } }   // never re-open an earlier hour
+      if(!ok){ best.q.s=old; holes.push(k); }
+    } else holes.push(k);
+  }
+  const holeNotes=[];
+  for(let i2=0;i2<holes.length;){
+    let j2=i2; while(j2+1<holes.length && holes[j2+1]===holes[j2]+1) j2++;
+    holeNotes.push(fmt(OPEN+holes[i2]/sph)+"–"+fmt(OPEN+(holes[j2]+1)/sph));
+    i2=j2+1;
+  }
+  placed.sort((a,b)=>a.s-b.s);
+
   // report any gap the rules wouldn't let us close, and name the blocking rule
   const gapNotes=[];
   for(let k=1;k<placed.length;k++){
@@ -1071,7 +1109,7 @@ function optimizeDay(di){
     gapNotes.push(`${fmt(OPEN+prevS/sph)} → ${fmt(OPEN+q.s/sph)} (${short}): ${why}`);
   }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
-  return {off: offToday, gaps: gapNotes};
+  return {off: offToday, gaps: gapNotes, holes: holeNotes};
 }
 function optimizeStarts(){
   const day = cur();
@@ -1083,6 +1121,8 @@ function optimizeStarts(){
     alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + r.off.join(", "));
   if(r.gaps.length)
     alert("Clock-in gaps over 1\u00bd h that the rules wouldn't let me close:\n" + r.gaps.join("\n"));
+  if(r.holes.length)
+    alert("⚠ NO ONE ON THE FLOOR during: " + r.holes.join(", ") + "\n(no shift can legally cover it — check availability or add someone)");
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
 }
@@ -1096,6 +1136,7 @@ function optimizeWeek(){
     if(r===null){ notes.push(lbl+": skipped (fewer than 2 valid shifts)"); return; }
     if(r.off.length) notes.push(lbl+": not available — "+r.off.join(", "));
     r.gaps.forEach(g=>notes.push(lbl+": gap "+g));
+    r.holes.forEach(h=>notes.push(lbl+": ⚠ NO ONE ON FLOOR "+h));
   });
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
