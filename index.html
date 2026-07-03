@@ -953,18 +953,23 @@ function printWeek(orient){
 }
 
 // ---- prefill from a #d= link (Claude parses a schedule image in chat, no API) ----
-// Payload: base64url JSON {date?, open?, demand?[], employees[{name,start,end,dm?,morning?}]}
+// Payload: base64url JSON {date?, open?, demand?[], employees[...]} for one day,
+// or {days:[{date, employees:[{name,start,end,dm?,morning?,cl?}]}, ...]} for a whole week.
 (function(){
   const m=location.hash.match(/[#&]d=([A-Za-z0-9_-]+=*)/); if(!m) return;
   try{
     const d=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
-    const date=d.date||"Imported day";
-    const shifts=(d.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
-    if(shifts.length){
+    const dayList = Array.isArray(d.days) ? d.days : [d];
+    let first = -1;
+    for(const dd of dayList){
+      const date = dd.date||"Imported day";
+      const shifts = (dd.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
+      if(!shifts.length) continue;
       let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
       if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
-      state.active=i;
+      if(first<0) first=i;
     }
+    if(first>=0) state.active=first;
     if(Array.isArray(d.demand)&&Number.isFinite(d.open))
       d.demand.forEach((v,k)=>{ if(v>0) state.demand[d.open+k]=v; });
     save();
