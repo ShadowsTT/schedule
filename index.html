@@ -262,7 +262,7 @@
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · clock-ins at most 1½h apart.</span>
+      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · 🌙 closed yesterday = earliest start 10 AM · clock-ins at most 1½h apart.</span>
     </div>
   </section>
   <section>
@@ -574,6 +574,7 @@ function renderEditor(){
       <td class="t"><input data-i="${i}" data-k="end" value="${s.end||""}" placeholder="12:30pm"></td>
       <td class="c"><input type="checkbox" data-i="${i}" data-k="dm" ${s.dm?"checked":""} title="Department Manager"></td>
       <td class="c"><input type="checkbox" data-i="${i}" data-k="am" ${s.am?"checked":""} title="Must stay in the morning"></td>
+      <td class="c"><input type="checkbox" data-i="${i}" data-k="cl" ${s.cl?"checked":""} title="Closed yesterday — can't open today"></td>
       <td class="col-actions"><button class="btn-x" data-del="${i}" title="Remove">✕</button></td>
     </tr>`).join("");
 }
@@ -670,11 +671,12 @@ function renderOptimize(){
 }
 function renderFlags(){
   document.getElementById("flags").innerHTML =
-    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="col-actions"></th></tr></thead><tbody>` +
+    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="c" title="Closed yesterday — can't open; earliest start ${fmt(NO_OPEN_BEFORE)}">🌙 Closed yday</th><th class="col-actions"></th></tr></thead><tbody>` +
     cur().shifts.map((s,i)=>`<tr>
       <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
+      <td class="c"><input type="checkbox" data-fi="${i}" data-fk="cl" ${s.cl?"checked":""}></td>
       <td class="col-actions"><button class="btn-x" data-fdel="${i}" title="Remove from this day">✕</button></td>
     </tr>`).join("") + `</tbody>`;
 }
@@ -692,12 +694,15 @@ function showView(v){
    ☀ AM shifts must START before noon · DMs never before 7 AM ·
    consecutive clock-ins at most 1.5h apart (locks win over the gap rule). */
 const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22, OVERSTAFF_PENALTY = 0.34;
+// ponytail: closed-yesterday rule = 12h rest after a 10 PM close -> earliest 10 AM.
+// Change this hour to loosen/tighten the clopen rule.
+const NO_OPEN_BEFORE = 10;
 let preOptimize = null;
 function optimizeStarts(){
   const day = cur();
   const all=[];
   day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
-    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am }); });
+    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am, cl:!!s.cl }); });
   if(all.length<2){ alert("Need at least 2 valid shifts to optimize."); return; }
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
@@ -714,7 +719,9 @@ function optimizeStarts(){
   // are more target slots than people, the shortfall lands at the end of the day.
   const pool = [...all].map(p=>{
     const len = Math.max(1, Math.min(Math.round(p.len*sph), n));
-    const lo = Math.min(p.dm ? Math.max(0,h2i(DM_MIN)) : 0, n-len);
+    let min = p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
+    if(p.cl) min = Math.max(min, h2i(NO_OPEN_BEFORE));   // closed yesterday -> can't open
+    const lo = Math.min(min, n-len);
     const hi = p.am ? Math.min(n-len, Math.max(lo, h2i(12)-1)) : n-len;
     const ws = Math.max(0, Math.min(h2i(p.start), n));
     return {p, len, lo, hi, ws};
@@ -726,18 +733,17 @@ function optimizeStarts(){
     pool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; const d=Math.abs(t-c.ws); if(d<bd){bd=d;bi=j;} });
     if(bi<0) continue;                                   // nobody can legally take this slot
     const c = pool.splice(bi,1)[0];
-    placed.push({p:c.p, s:t, len:c.len});
+    placed.push({p:c.p, s:t, len:c.len, lo:c.lo});
   }
   // more people than slots: leftovers stay as close to their current time as the rules allow
-  pool.forEach(c=> placed.push({p:c.p, s:Math.max(c.lo, Math.min(c.ws, c.hi)), len:c.len}));
+  pool.forEach(c=> placed.push({p:c.p, s:Math.max(c.lo, Math.min(c.ws, c.hi)), len:c.len, lo:c.lo}));
   // hard rule: consecutive clock-ins never more than MAXGAP apart
   const G = Math.round(MAXGAP*sph);
   placed.sort((a,b)=>a.s-b.s);
   for(let k=1;k<placed.length;k++){
     const q=placed[k];
     if(q.s-placed[k-1].s>G){
-      const lo = q.p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
-      const ns = Math.max(Math.min(placed[k-1].s+G, n-q.len), lo);
+      const ns = Math.max(Math.min(placed[k-1].s+G, n-q.len), q.lo);
       if(ns!==q.s){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
     }
   }
@@ -875,7 +881,7 @@ function printWeek(orient){
   try{
     const d=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
     const date=d.date||"Imported day";
-    const shifts=(d.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning }));
+    const shifts=(d.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
     if(shifts.length){
       let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
       if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
