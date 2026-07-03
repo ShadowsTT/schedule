@@ -923,6 +923,16 @@ function optimizeDay(di){
     pool.push({p, len, lo, hi, ws});
   }
   const placed = [];
+  // Standing rule: these pairs never work at the same time ("7047"=LIAM, "5650"=ANGELA).
+  const APART = [["7047","5650"]];
+  const apartClash = (nm, s, len, exceptQ) => {
+    const id0 = idOf(nm); if(!id0) return false;
+    let pid = null;
+    for(const [x,y] of APART){ if(id0===x) pid=y; else if(id0===y) pid=x; if(pid) break; }
+    if(!pid) return false;
+    const o = placed.find(q => q!==exceptQ && idOf(day.shifts[q.p.i].name)===pid);
+    return !!o && s < o.s+o.len && s+len > o.s;
+  };
   // ---- DM rotation: opener / closer / mid (availability & locks still win) ----
   // Latest-yesterday-start opens today, yesterday's opener closes today.
   const dmPool = pool.filter(c=>c.p.dm), floorPool = pool.filter(c=>!c.p.dm);
@@ -960,13 +970,23 @@ function optimizeDay(di){
   want.sort((a,b)=>a-b);
   for(const t of want){
     let bi=-1, bd=1e9;
-    floorPool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; const d=Math.abs(t-c.ws); if(d<bd){bd=d;bi=j;} });
+    floorPool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; if(apartClash(day.shifts[c.p.i].name, t, c.len)) return; const d=Math.abs(t-c.ws); if(d<bd){bd=d;bi=j;} });
     if(bi<0) continue;                                   // nobody can legally take this slot
     const c = floorPool.splice(bi,1)[0];
     placed.push({p:c.p, s:t, len:c.len, lo:c.lo});
   }
   // more people than slots: leftovers stay as close to their current time as the rules allow
-  floorPool.forEach(c=> placed.push({p:c.p, s:Math.max(c.lo, Math.min(c.ws, c.hi)), len:c.len, lo:c.lo}));
+  floorPool.forEach(c=>{
+    const s0 = Math.max(c.lo, Math.min(c.ws, c.hi));
+    let s = s0;
+    if(apartClash(day.shifts[c.p.i].name, s0, c.len)){       // nearest start that avoids the partner
+      for(let d=1; d<=n; d++){
+        const cand = [s0+d, s0-d].find(x => x>=c.lo && x<=c.hi && !apartClash(day.shifts[c.p.i].name, x, c.len));
+        if(cand!=null){ s=cand; break; }
+      }
+    }
+    placed.push({p:c.p, s, len:c.len, lo:c.lo});
+  });
   // hard rule: consecutive clock-ins never more than MAXGAP apart
   const G = Math.round(MAXGAP*sph);
   placed.sort((a,b)=>a.s-b.s);
@@ -974,7 +994,7 @@ function optimizeDay(di){
     const q=placed[k];
     if(q.s-placed[k-1].s>G && !q.fix){                   // the closing DM never gets pulled off close
       const ns = Math.max(Math.min(placed[k-1].s+G, n-q.len), q.lo);
-      if(ns!==q.s){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
+      if(ns!==q.s && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
     }
   }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
