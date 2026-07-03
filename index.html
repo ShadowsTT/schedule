@@ -268,6 +268,7 @@
       <span class="empty" style="font-style:normal">Brings every day with a demand number up to demand+10h by extending/trimming part-timers only (PT shifts kept between 6–7½h, PT ≤ 30h/week). Full-timers never change. Re-run ⚙ Optimize per day afterwards.</span>
     </div>
     <div class="optbar">
+      <button class="btn-primary" id="weekBtn" style="background:linear-gradient(135deg,#7c3aed,#2563eb)">⚡ Do the whole week</button>
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
@@ -517,14 +518,13 @@ function trimStep(s){               // smallest 30-min step that REMOVES paid ti
   for(const st of [0.5,1,1.5]){ if((b-st)-a<PT_SHIFT_MIN-1e-9) return 0; if(paidLenH(a,b-st)<paidLenH(a,b)) return st; }
   return 0;
 }
-function balanceHours(){
-  if(!confirm("Balance the whole week?\nPart-timer shifts get extended/trimmed so each day with a demand number reaches demand+"+WEEK_BUFFER+"h (PT max "+PT_MAX_HOURS+"h/week). Full-timers are not touched.")) return;
+function balanceCore(notes){
   state.days.forEach(d=>d.shifts.forEach(s=>{ // pass 0: no PT shift longer than PT_SHIFT_MAX
     if(!isPT(s.name)) return;
     const a=parseTime(s.start), b=parseTime(s.end);
     if(a!=null && b!=null && b-a>PT_SHIFT_MAX+1e-9) s.end=fmt(a+PT_SHIFT_MAX);
   }));
-  const tot = weekTotals(), notes=[];
+  const tot = weekTotals();
   Object.keys(tot).forEach(id=>{              // pass 1: enforce the PT weekly cap
     if(!PART_TIME.has(id)) return;
     let g=100;
@@ -568,6 +568,11 @@ function balanceHours(){
       }
     }
   });
+}
+function balanceHours(){
+  if(!confirm("Balance the whole week?\nPart-timer shifts get extended/trimmed so each day with a demand number reaches demand+"+WEEK_BUFFER+"h (PT max "+PT_MAX_HOURS+"h/week, shifts 6–7½h). Full-timers are not touched.")) return;
+  const notes=[];
+  balanceCore(notes);
   save(); renderAll();
   alert(notes.length ? "Balanced with warnings:\n"+notes.join("\n") : "Week balanced ✓ — re-run ⚙ Optimize on each day to re-place the shifts.");
 }
@@ -857,14 +862,12 @@ function closedPrevDay(name, di){
   return !!m && (parseTime(m.end)||0) >= CLOSE_CUTOFF;
 }
 let preOptimize = null;
-function optimizeStarts(){
-  const day = cur();
+function optimizeDay(di){
+  const day = state.days[di];
   const all=[];
   day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
     if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am, cl:!!s.cl }); });
-  if(all.length<2){ alert("Need at least 2 valid shifts to optimize."); return; }
-  if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
-  preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
+  if(all.length<2) return null;
 
   const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
   const h2i = h => Math.round((h-OPEN)*sph);
@@ -883,7 +886,7 @@ function optimizeStarts(){
     if(av === null){ offToday.push(day.shifts[p.i].name); continue; }  // not available that weekday: left unmoved
     let len = Math.max(1, Math.min(Math.round(p.len*sph), n));
     let min = p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
-    if(p.cl || closedPrevDay(day.shifts[p.i].name, state.active))
+    if(p.cl || closedPrevDay(day.shifts[p.i].name, di))
       min = Math.max(min, h2i(NO_OPEN_BEFORE));          // closed yesterday (auto or 🌙) -> can't open
     let end = n;                                          // latest slot the shift may end on
     if(av){
@@ -903,7 +906,7 @@ function optimizeStarts(){
   // Latest-yesterday-start opens today, yesterday's opener closes today.
   const dmPool = pool.filter(c=>c.p.dm), floorPool = pool.filter(c=>!c.p.dm);
   if(dmPool.length){
-    const prev = state.days[state.active-1];
+    const prev = state.days[di-1];
     const prevStart = nm => { if(!prev) return null;
       const id = String(nm||"").match(/(\d{4,})\s*$/); if(!id) return null;
       const m = prev.shifts.find(s=>String(s.name||"").trim().endsWith(id[1])); return m ? parseTime(m.start) : null; };
@@ -954,15 +957,39 @@ function optimizeStarts(){
     }
   }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
-  if(offToday.length)
-    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + offToday.join(", "));
-
+  return offToday;
+}
+function optimizeStarts(){
+  const day = cur();
+  if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
+  preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
+  const off = optimizeDay(state.active);
+  if(off===null){ preOptimize=null; alert("Need at least 2 valid shifts to optimize."); return; }
+  if(off.length)
+    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + off.join(", "));
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
 }
+function optimizeWeek(){
+  if(!confirm(`Do the whole week?\n1) Balance part-timer hours (6–7½h shifts, ${PT_MAX_HOURS}h/week cap, demand+${WEEK_BUFFER}h per day)\n2) Optimize all ${state.days.length} days in order\nFull-timers keep their hours. One Undo restores everything.`)) return;
+  preOptimize = { week: structuredClone(state.days) };
+  const notes=[];
+  balanceCore(notes);
+  state.days.forEach((d,i)=>{
+    const off = optimizeDay(i);
+    if(off===null) notes.push(((d.date||"?").split(",")[0])+": skipped (fewer than 2 valid shifts)");
+    else if(off.length) notes.push(((d.date||"?").split(",")[0])+": not available — "+off.join(", "));
+  });
+  save(); renderAll();
+  document.getElementById("undoOpt").style.display="";
+  alert(notes.length ? "Week done — check these:\n"+notes.join("\n") : "Week done ✓ — every day balanced and optimized.");
+}
 function undoOptimize(){
   if(!preOptimize) return;
-  state.days[preOptimize.i].shifts = preOptimize.shifts; preOptimize=null; save(); renderAll();
+  if(preOptimize.week) state.days = preOptimize.week;
+  else state.days[preOptimize.i].shifts = preOptimize.shifts;
+  state.active = Math.min(state.active, state.days.length-1);
+  preOptimize=null; save(); renderAll();
   document.getElementById("undoOpt").style.display="none";
 }
 
@@ -1004,6 +1031,7 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
   inputs[inputs.length-1].focus();
 });
 document.getElementById("optBtn").addEventListener("click", optimizeStarts);
+document.getElementById("weekBtn").addEventListener("click", optimizeWeek);
 document.getElementById("undoOpt").addEventListener("click", undoOptimize);
 document.getElementById("flags").addEventListener("change", e=>{
   const i=e.target.dataset.fi, k=e.target.dataset.fk;
