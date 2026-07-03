@@ -997,17 +997,42 @@ function optimizeDay(di){
       if(ns!==q.s && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
     }
   }
+  // report any gap the rules wouldn't let us close, and name the blocking rule
+  const gapNotes=[];
+  for(let k=1;k<placed.length;k++){
+    const q=placed[k], prevS=placed[k-1].s, gap=q.s-prevS;
+    if(gap<=G) continue;
+    const nm=day.shifts[q.p.i].name, short=String(nm).split(" ")[0];
+    let why;
+    if(q.fix) why="DM role placement";
+    else {
+      const desired=Math.max(Math.min(prevS+G, n-q.len), 0);
+      if(apartClash(nm, Math.max(desired,q.lo), q.len, q)) why="keep-apart rule";
+      else {
+        const av=availFor(nm, day.date);
+        const avLo=av?Math.max(0,h2i(av[0])):0, dmLo=q.p.dm?h2i(DM_MIN):0;
+        const clLo=(q.p.cl||closedPrevDay(nm,di))?h2i(NO_OPEN_BEFORE):0;
+        why = q.lo<=0 ? "no one available earlier"
+            : (avLo>=dmLo&&avLo>=clLo) ? "availability starts "+fmt(OPEN+avLo/sph)
+            : (clLo>=dmLo) ? "closed the day before (rest until "+fmt(NO_OPEN_BEFORE)+")"
+            : "DM can't start before "+fmt(DM_MIN);
+      }
+    }
+    gapNotes.push(`${fmt(OPEN+prevS/sph)} → ${fmt(OPEN+q.s/sph)} (${short}): ${why}`);
+  }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
-  return offToday;
+  return {off: offToday, gaps: gapNotes};
 }
 function optimizeStarts(){
   const day = cur();
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
-  const off = optimizeDay(state.active);
-  if(off===null){ preOptimize=null; alert("Need at least 2 valid shifts to optimize."); return; }
-  if(off.length)
-    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + off.join(", "));
+  const r = optimizeDay(state.active);
+  if(r===null){ preOptimize=null; alert("Need at least 2 valid shifts to optimize."); return; }
+  if(r.off.length)
+    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + r.off.join(", "));
+  if(r.gaps.length)
+    alert("Clock-in gaps over 1\u00bd h that the rules wouldn't let me close:\n" + r.gaps.join("\n"));
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
 }
@@ -1017,9 +1042,10 @@ function optimizeWeek(){
   const notes=[];
   balanceCore(notes);
   state.days.forEach((d,i)=>{
-    const off = optimizeDay(i);
-    if(off===null) notes.push(((d.date||"?").split(",")[0])+": skipped (fewer than 2 valid shifts)");
-    else if(off.length) notes.push(((d.date||"?").split(",")[0])+": not available — "+off.join(", "));
+    const r = optimizeDay(i), lbl = (d.date||"?").split(",")[0];
+    if(r===null){ notes.push(lbl+": skipped (fewer than 2 valid shifts)"); return; }
+    if(r.off.length) notes.push(lbl+": not available — "+r.off.join(", "));
+    r.gaps.forEach(g=>notes.push(lbl+": gap "+g));
   });
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
