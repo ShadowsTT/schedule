@@ -186,6 +186,9 @@
     <button class="btn-ghost" id="newDay">+ New day</button>
     <button class="btn-ghost" id="dupDay">Duplicate</button>
     <button class="btn-x" id="delDay" title="Delete this day">🗑</button>
+    <label for="demandHrs" style="margin-left:10px">Demand hrs</label>
+    <input id="demandHrs" style="width:84px;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit" placeholder="89.5">
+    <div id="weekBar" style="display:flex;gap:6px;flex-wrap:wrap;width:100%"></div>
   </div>
 
   <nav class="viewnav">
@@ -258,6 +261,12 @@
     <div class="gridscroll"><table class="cov" id="cov"></table></div>
     <h2 style="margin-top:20px"><span class="ico">🔒</span>Per-associate rules <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— tick ☀ for who must be in the morning</span></h2>
     <table class="grid" id="flags" style="max-width:520px"></table>
+    <h2 style="margin-top:18px"><span class="ico">📊</span>Week hours <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— part-timers capped at 30h/week</span></h2>
+    <div class="tablescroll"><table class="grid" id="weekHours"></table></div>
+    <div class="optbar">
+      <button class="btn-primary" id="balanceBtn">⚖ Balance hours (whole week)</button>
+      <span class="empty" style="font-style:normal">Brings every day with a demand number up to demand+10h by extending/trimming part-timers only (min 4h shift, PT ≤ 30h/week). Full-timers never change. Re-run ⚙ Optimize per day afterwards.</span>
+    </div>
     <div class="optbar">
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
@@ -484,6 +493,102 @@ function availFor(name, dateStr){
   const id = String(name||"").match(/(\d{4,})\s*$/);
   const rec = id && AVAIL[id[1].slice(-4)];
   return rec ? rec[wd] : undefined;   // [start,end] | null (off that day) | undefined (no data)
+}
+
+/* ---- Weekly hours: demand buffer + part-timer 30h cap ---- */
+const WEEK_BUFFER = 10, PT_MAX_HOURS = 30, MIN_SHIFT = 4;
+const PART_TIME = new Set(["7047","6547","1256","8836","3659","0757","3450","8609","4020","2786","1853","9488","6428","2226","8506"]);
+const idOf = n => { const m = String(n||"").match(/(\d{4,})\s*$/); return m ? m[1].slice(-4) : null; };
+const isPT = n => PART_TIME.has(idOf(n)||"");
+const paidLenH = (a,b) => { const L=b-a; return L>0 ? L-(L>=6?1:0) : 0; };   // lunch unpaid on 6h+
+const paidLen = s => { const a=parseTime(s.start), b=parseTime(s.end);
+  return (a==null||b==null) ? 0 : paidLenH(a,b); };
+const dayHours = d => Math.round(d.shifts.reduce((t,s)=>t+paidLen(s),0)*4)/4;
+function weekTotals(){ const m={}; state.days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id) m[id]=(m[id]||0)+paidLen(s); })); return m; }
+function extendStep(s, d){          // smallest 30-min step that ADDS paid time (lunch kicks in at 6h)
+  const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return 0;
+  const av = availFor(s.name, d.date); if(av===null) return 0;
+  const maxEnd = Math.min(CLOSE, av ? av[1] : CLOSE);
+  for(const st of [0.5,1,1.5]){ if(b+st>maxEnd+1e-9) return 0; if(paidLenH(a,b+st)>paidLenH(a,b)) return st; }
+  return 0;
+}
+function trimStep(s){               // smallest 30-min step that REMOVES paid time; shifts never below 4h
+  const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return 0;
+  for(const st of [0.5,1,1.5]){ if((b-st)-a<MIN_SHIFT-1e-9) return 0; if(paidLenH(a,b-st)<paidLenH(a,b)) return st; }
+  return 0;
+}
+function balanceHours(){
+  if(!confirm("Balance the whole week?\nPart-timer shifts get extended/trimmed so each day with a demand number reaches demand+"+WEEK_BUFFER+"h (PT max "+PT_MAX_HOURS+"h/week). Full-timers are not touched.")) return;
+  const tot = weekTotals(), notes=[];
+  Object.keys(tot).forEach(id=>{              // pass 1: enforce the PT weekly cap
+    if(!PART_TIME.has(id)) return;
+    let g=100;
+    while(tot[id]>PT_MAX_HOURS+1e-9 && g-->0){
+      let best=null;
+      state.days.forEach(d=>d.shifts.forEach(s=>{
+        if(idOf(s.name)!==id) return; const st=trimStep(s); if(!st) return;
+        const len=parseTime(s.end)-parseTime(s.start);
+        if(!best||len>best.len) best={s,st,len};
+      }));
+      if(!best) break;
+      const before=paidLen(best.s); best.s.end=fmt(parseTime(best.s.end)-best.st);
+      tot[id]+=paidLen(best.s)-before;
+    }
+  });
+  state.days.forEach(d=>{                     // pass 2: land each day on demand+buffer, PTs only
+    if(d.demandHours==null) return;
+    const target=d.demandHours+WEEK_BUFFER;
+    let g=400;
+    while(g-->0){
+      const diff=target-dayHours(d);
+      if(Math.abs(diff)<0.25) break;
+      if(diff>0){
+        const cands=d.shifts.filter(s=>isPT(s.name))
+          .map(s=>({s,id:idOf(s.name),st:extendStep(s,d)}))
+          .filter(c=>c.st && (tot[c.id]||0)<=PT_MAX_HOURS-0.5+1e-9)
+          .sort((a,b)=>(tot[a.id]||0)-(tot[b.id]||0));
+        if(!cands.length){ notes.push(((d.date||"?").split(",")[0])+": "+diff.toFixed(2)+"h short — no part-timer can extend"); break; }
+        const c=cands[0], before=paidLen(c.s);
+        c.s.end=fmt(parseTime(c.s.end)+c.st);
+        tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
+      } else {
+        const cands=d.shifts.filter(s=>isPT(s.name))
+          .map(s=>({s,id:idOf(s.name),st:trimStep(s)}))
+          .filter(c=>c.st)
+          .sort((a,b)=>(tot[b.id]||0)-(tot[a.id]||0));
+        if(!cands.length) break;
+        const c=cands[0], before=paidLen(c.s);
+        c.s.end=fmt(parseTime(c.s.end)-c.st);
+        tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
+      }
+    }
+  });
+  save(); renderAll();
+  alert(notes.length ? "Balanced with warnings:\n"+notes.join("\n") : "Week balanced ✓ — re-run ⚙ Optimize on each day to re-place the shifts.");
+}
+function renderWeekBar(){
+  const el=document.getElementById("weekBar"); if(!el) return;
+  el.innerHTML=state.days.map((d,i)=>{
+    const sched=dayHours(d), dem=d.demandHours;
+    const diff=dem==null?null:Math.round((sched-dem)*4)/4;
+    const bg=diff==null?"#f8fafc":(diff>=WEEK_BUFFER?"#dcfce7":(diff>=0?"#fef3c7":"#fee2e2"));
+    return `<button data-day="${i}" style="background:${bg};border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer;${i===state.active?"outline:2px solid var(--accent);":""}">${(d.date||"?").split(",")[0]} · ${sched}h${dem!=null?` / ${dem} <b>(${diff>=0?"+":""}${diff})</b>`:""}</button>`;
+  }).join("");
+  const inp=document.getElementById("demandHrs");
+  if(inp && document.activeElement!==inp) inp.value=cur().demandHours ?? "";
+}
+function renderWeekHours(){
+  const el=document.getElementById("weekHours"); if(!el) return;
+  const tot=weekTotals(), ids={};
+  state.days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id&&!ids[id]) ids[id]=s.name; }));
+  const head=`<thead><tr><th>Associate</th><th class="c">Status</th>${state.days.map(d=>`<th class="c">${(d.date||"?").slice(0,3)}</th>`).join("")}<th class="c">Week</th></tr></thead>`;
+  const rows=Object.entries(ids).sort((a,b)=>a[1].localeCompare(b[1])).map(([id,nm])=>{
+    const pt=PART_TIME.has(id), w=Math.round((tot[id]||0)*4)/4, over=pt&&w>PT_MAX_HOURS+1e-9;
+    const cells=state.days.map(d=>{ const s=d.shifts.find(x=>idOf(x.name)===id);
+      return `<td class="c">${s?paidLen(s):'<span class="empty">—</span>'}</td>`; }).join("");
+    return `<tr><td class="name">${nm}</td><td class="c">${pt?"PT":"<b>FT</b>"}</td>${cells}<td class="c" style="font-weight:700;${over?"color:var(--danger)":""}">${w}${pt?' <span class="empty">/ '+PT_MAX_HOURS+'</span>':""}</td></tr>`;
+  }).join("");
+  el.innerHTML=head+`<tbody>${rows}</tbody>`;
 }
 
 /* ---- Break policy (edit these numbers to match your store) ----
@@ -853,7 +958,7 @@ function renderDays(){
   sel.innerHTML = state.days.map((d,i)=>`<option value="${i}" ${i===state.active?"selected":""}>${(d.date||"Untitled day").replace(/</g,"&lt;")}</option>`).join("");
   document.getElementById("delDay").disabled = state.days.length<=1;
 }
-function renderAll(){ renderDays(); renderEditor(); renderReport(); renderOptimize(); }
+function renderAll(){ renderDays(); renderEditor(); renderReport(); renderOptimize(); renderWeekBar(); renderWeekHours(); }
 
 // events
 document.getElementById("editBody").addEventListener("input", e=>{
@@ -925,6 +1030,16 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
     state=freshState(); save(); renderAll();
   }
 });
+
+document.getElementById("demandHrs").addEventListener("input", e=>{
+  const v=e.target.value.trim();
+  if(v==="") delete cur().demandHours; else cur().demandHours=+v||0;
+  renderWeekBar(); localStorage.setItem(KEY, JSON.stringify(state));
+});
+document.getElementById("weekBar").addEventListener("click", e=>{
+  const b=e.target.closest("[data-day]"); if(!b) return; state.active=+b.dataset.day; renderAll();
+});
+document.getElementById("balanceBtn").addEventListener("click", balanceHours);
 
 // ---- day switcher ----
 document.getElementById("daySel").addEventListener("change", e=>{ state.active=+e.target.value; renderAll(); });
