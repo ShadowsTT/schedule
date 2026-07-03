@@ -271,7 +271,8 @@
       <span><i class="sw met"></i>Target met</span>
       <span><i class="sw under"></i>Under (need more)</span>
       <span><i class="sw over"></i>Over</span>
-      <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
+      <span class="empty" style="font-style:normal">Type how many should clock in each hour — targets are per day</span>
+      <button class="btn-ghost" id="copyTargets" style="font-size:11.5px" title="Copy THIS day's targets to every day in the list">⧉ Copy targets to all days</button>
     </div>
     <div class="gridscroll"><table class="cov" id="cov"></table></div>
     <div class="optbar" style="margin-top:16px">
@@ -435,14 +436,16 @@ const KEY = "scheduleDashboard_v3";
 
 // Jeff's standing clock-in targets (same every week): 2 at 4-5 AM, then 1 per hour to 9 PM
 const DEFAULT_TARGETS = {4:2,5:2,6:1,7:1,8:1,9:1,10:1,11:1,12:1,13:1,14:1,15:1,16:1,17:1,18:1,19:1,20:1,21:1};
-const freshState = () => ({ v:2, active:0, demand:{...DEFAULT_TARGETS}, days: structuredClone(SEED_DAYS) });
+const freshState = () => { const f = { v:2, active:0, days: structuredClone(SEED_DAYS) };
+  f.days.forEach(d=>d.demand={...DEFAULT_TARGETS}); return f; };   // targets are PER DAY
 let state = load();
 function load(){
   try {
     let s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.shifts && !s.days) s = { v:2, active:0, days:[ s ] };  // migrate old single-day
     if(s && s.days){
-      if(!s.demand || !Object.keys(s.demand).length) s.demand = {...DEFAULT_TARGETS};
+      const base = (s.demand && Object.keys(s.demand).length) ? s.demand : DEFAULT_TARGETS;
+      s.days.forEach(d=>{ if(!d.demand || !Object.keys(d.demand).length) d.demand = {...base}; });
       if((s.seedV||0) < SEED_V){                    // merge newly-added seed days, once
         const have = new Set(s.days.map(d=>d.date));
         SEED_DAYS.forEach(d=>{ if(!have.has(d.date)) s.days.push(structuredClone(d)); });
@@ -820,12 +823,12 @@ function schedStarts(){
   return c;
 }
 function covCell(h, starts){
-  const sc = starts[h]||0; const t = (state.demand||{})[h];
+  const sc = starts[h]||0; const t = (cur().demand||{})[h];
   let cls=""; if(t!=null && t!==""){ const n=+t; cls = sc<n?"under" : sc>n?"over" : "met"; }
   return `<td class="covcell ${cls}">${sc}</td>`;
 }
 function renderCoverage(){
-  const starts = schedStarts(); const dem = state.demand||{};
+  const starts = schedStarts(); const dem = cur().demand||{};
   const head = `<thead><tr><th class="rowname">Hour</th>${COV_HRS.map(h=>`<th>${compactH(h)}</th>`).join("")}</tr></thead>`;
   const tRow = `<tr><td class="rowname">Target in</td>${COV_HRS.map(h=>`<td><input class="dem" type="number" min="0" data-h="${h}" value="${dem[h]??""}" placeholder="–"></td>`).join("")}</tr>`;
   const sRow = `<tr id="covSched"><td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}</tr>`;
@@ -895,7 +898,7 @@ function optimizeDay(di){
   const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
   const h2i = h => Math.round((h-OPEN)*sph);
   // The grid is CLOCK-IN targets: expand {hour: count} into start slots.
-  const dem = state.demand || {};
+  const dem = day.demand || state.demand || {};   // targets are per day (legacy fallback)
   const want = [];
   Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
     .forEach(h=>{ for(let j=0;j<dem[h];j++) want.push(Math.max(0,Math.min(h2i(h),n-1))); });
@@ -1129,8 +1132,8 @@ document.getElementById("shiftBody").addEventListener("input", e=>{
 document.getElementById("cov").addEventListener("input", e=>{
   const h=e.target.dataset.h;
   if(h==null) return;
-  state.demand = state.demand || {};        // demand is store-wide (same every day)
-  if(e.target.value==="") delete state.demand[h]; else state.demand[h] = +e.target.value;
+  cur().demand = cur().demand || {};        // targets are PER DAY
+  if(e.target.value==="") delete cur().demand[h]; else cur().demand[h] = +e.target.value;
   refreshSched();                            // recolor without rebuilding the inputs (keeps focus)
 });
 document.getElementById("editBody").addEventListener("click", e=>{
@@ -1195,11 +1198,17 @@ document.getElementById("weekBar").addEventListener("click", e=>{
   const b=e.target.closest("[data-day]"); if(!b) return; state.active=+b.dataset.day; renderAll();
 });
 document.getElementById("balanceBtn").addEventListener("click", balanceHours);
+document.getElementById("copyTargets").addEventListener("click", ()=>{
+  if(!confirm("Copy THIS day's clock-in targets to every day in the list?")) return;
+  const src={...(cur().demand||{})};
+  state.days.forEach(d=>d.demand={...src});
+  save(); renderAll();
+});
 
 // ---- day switcher ----
 document.getElementById("daySel").addEventListener("change", e=>{ state.active=+e.target.value; renderAll(); });
 document.getElementById("newDay").addEventListener("click", ()=>{
-  state.days.push({ date:"New day", shifts: structuredClone(DEFAULTS.shifts) });
+  state.days.push({ date:"New day", shifts: structuredClone(DEFAULTS.shifts), demand:{...DEFAULT_TARGETS} });
   state.active = state.days.length-1; renderAll();
 });
 document.getElementById("dupDay").addEventListener("click", ()=>{
@@ -1250,6 +1259,11 @@ function printWeek(orient){
       if(!shifts.length) continue;
       let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
       if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
+      const tgt={};
+      if(Array.isArray(d.demand)&&Number.isFinite(d.open)) d.demand.forEach((v,k)=>{ if(v>0) tgt[d.open+k]=v; });
+      const dayObj=state.days[i];
+      if(Object.keys(tgt).length) dayObj.demand=tgt;
+      else if(!dayObj.demand || !Object.keys(dayObj.demand).length) dayObj.demand={...DEFAULT_TARGETS};
       if(first<0) first=i;
     }
     if(Array.isArray(d.days)){                         // a week import replaces the list: exactly one week
@@ -1257,8 +1271,6 @@ function printWeek(orient){
       state.days=state.days.filter(x=>keep.has(x.date));
     }
     if(first>=0) state.active=Math.max(0, state.days.findIndex(x=>x.date===(dayList[0].date||"Imported day")));
-    if(Array.isArray(d.demand)&&Number.isFinite(d.open))
-      d.demand.forEach((v,k)=>{ if(v>0) state.demand[d.open+k]=v; });
     save();
     history.replaceState(null,"",location.pathname+"#schedule");
   }catch(e){ console.warn("bad #d= payload", e); }
