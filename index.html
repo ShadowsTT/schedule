@@ -262,7 +262,7 @@
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · 🌙 closed yesterday = earliest start 10 AM · clock-ins at most 1½h apart.</span>
+      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · 🌙 closers (auto-detected from the previous day, or ticked) = earliest start 9 AM · clock-ins at most 1½h apart.</span>
     </div>
   </section>
   <section>
@@ -714,7 +714,7 @@ function renderFlags(){
       const avTxt = av===undefined ? '<span class="empty">no data</span>'
         : (av===null ? '<b style="color:var(--danger)">OFF this day</b>' : `${fmt(av[0])} – ${fmt(av[1])}`);
       return `<tr>
-      <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}</td>
+      <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}${closedPrevDay(s.name,state.active)?' <span title="closed the previous day — earliest start '+fmt(NO_OPEN_BEFORE)+'">🌙</span>':''}</td>
       <td>${avTxt}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
@@ -736,9 +736,16 @@ function showView(v){
    ☀ AM shifts must START before noon · DMs never before 7 AM ·
    consecutive clock-ins at most 1.5h apart (locks win over the gap rule). */
 const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22, OVERSTAFF_PENALTY = 0.34;
-// ponytail: closed-yesterday rule = 12h rest after a 10 PM close -> earliest 10 AM.
-// Change this hour to loosen/tighten the clopen rule.
-const NO_OPEN_BEFORE = 10;
+// ponytail: clopen rule — anyone whose previous-day shift ended at/after
+// CLOSE_CUTOFF is a closer and can't start before NO_OPEN_BEFORE the next day.
+// Auto-detected from the previous day in the list; the 🌙 checkbox is the manual override.
+const NO_OPEN_BEFORE = 9, CLOSE_CUTOFF = 21.5;
+function closedPrevDay(name, di){
+  const prev = state.days[di-1]; if(!prev) return false;
+  const id = String(name||"").match(/(\d{4,})\s*$/); if(!id) return false;
+  const m = prev.shifts.find(s=>String(s.name||"").trim().endsWith(id[1]));
+  return !!m && (parseTime(m.end)||0) >= CLOSE_CUTOFF;
+}
 let preOptimize = null;
 function optimizeStarts(){
   const day = cur();
@@ -766,7 +773,8 @@ function optimizeStarts(){
     if(av === null){ offToday.push(day.shifts[p.i].name); continue; }  // not available that weekday: left unmoved
     let len = Math.max(1, Math.min(Math.round(p.len*sph), n));
     let min = p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
-    if(p.cl) min = Math.max(min, h2i(NO_OPEN_BEFORE));   // closed yesterday -> can't open
+    if(p.cl || closedPrevDay(day.shifts[p.i].name, state.active))
+      min = Math.max(min, h2i(NO_OPEN_BEFORE));          // closed yesterday (auto or 🌙) -> can't open
     let end = n;                                          // latest slot the shift may end on
     if(av){
       min = Math.max(min, Math.max(0, h2i(av[0])));
