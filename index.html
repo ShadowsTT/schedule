@@ -265,7 +265,7 @@
     <div class="tablescroll"><table class="grid" id="weekHours"></table></div>
     <div class="optbar">
       <button class="btn-primary" id="balanceBtn">⚖ Balance hours (whole week)</button>
-      <span class="empty" style="font-style:normal">Brings every day with a demand number up to demand+10h by extending/trimming part-timers only (min 4h shift, PT ≤ 30h/week). Full-timers never change. Re-run ⚙ Optimize per day afterwards.</span>
+      <span class="empty" style="font-style:normal">Brings every day with a demand number up to demand+10h by extending/trimming part-timers only (PT shifts kept between 6–7½h, PT ≤ 30h/week). Full-timers never change. Re-run ⚙ Optimize per day afterwards.</span>
     </div>
     <div class="optbar">
       <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
@@ -496,7 +496,7 @@ function availFor(name, dateStr){
 }
 
 /* ---- Weekly hours: demand buffer + part-timer 30h cap ---- */
-const WEEK_BUFFER = 10, PT_MAX_HOURS = 30, MIN_SHIFT = 4;
+const WEEK_BUFFER = 10, PT_MAX_HOURS = 30, PT_SHIFT_MIN = 6, PT_SHIFT_MAX = 7.5;  // PT shifts only adjusted within 6-7.5h
 const PART_TIME = new Set(["7047","6547","1256","8836","3659","0757","3450","8609","4020","2786","1853","9488","6428"]);  // ANNIKA 2226 = FT; TASHA 8506 left the team
 const idOf = n => { const m = String(n||"").match(/(\d{4,})\s*$/); return m ? m[1].slice(-4) : null; };
 const isPT = n => PART_TIME.has(idOf(n)||"");
@@ -509,16 +509,21 @@ function extendStep(s, d){          // smallest 30-min step that ADDS paid time 
   const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return 0;
   const av = availFor(s.name, d.date); if(av===null) return 0;
   const maxEnd = Math.min(CLOSE, av ? av[1] : CLOSE);
-  for(const st of [0.5,1,1.5]){ if(b+st>maxEnd+1e-9) return 0; if(paidLenH(a,b+st)>paidLenH(a,b)) return st; }
+  for(const st of [0.5,1,1.5]){ if(b+st>maxEnd+1e-9 || (b+st)-a>PT_SHIFT_MAX+1e-9) return 0; if(paidLenH(a,b+st)>paidLenH(a,b)) return st; }
   return 0;
 }
 function trimStep(s){               // smallest 30-min step that REMOVES paid time; shifts never below 4h
   const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return 0;
-  for(const st of [0.5,1,1.5]){ if((b-st)-a<MIN_SHIFT-1e-9) return 0; if(paidLenH(a,b-st)<paidLenH(a,b)) return st; }
+  for(const st of [0.5,1,1.5]){ if((b-st)-a<PT_SHIFT_MIN-1e-9) return 0; if(paidLenH(a,b-st)<paidLenH(a,b)) return st; }
   return 0;
 }
 function balanceHours(){
   if(!confirm("Balance the whole week?\nPart-timer shifts get extended/trimmed so each day with a demand number reaches demand+"+WEEK_BUFFER+"h (PT max "+PT_MAX_HOURS+"h/week). Full-timers are not touched.")) return;
+  state.days.forEach(d=>d.shifts.forEach(s=>{ // pass 0: no PT shift longer than PT_SHIFT_MAX
+    if(!isPT(s.name)) return;
+    const a=parseTime(s.start), b=parseTime(s.end);
+    if(a!=null && b!=null && b-a>PT_SHIFT_MAX+1e-9) s.end=fmt(a+PT_SHIFT_MAX);
+  }));
   const tot = weekTotals(), notes=[];
   Object.keys(tot).forEach(id=>{              // pass 1: enforce the PT weekly cap
     if(!PART_TIME.has(id)) return;
