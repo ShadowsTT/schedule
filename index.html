@@ -450,6 +450,42 @@ const slot = h => {            // compact range, collapse shared AM/PM: "4–5 A
 };
 const compactH = h => { const hh=((h%24)+24)%24; let d=hh%12; if(d===0)d=12; return d+(hh<12?"a":"p"); };
 
+/* ---- Team availability (from the associates' profiles, updated 2026-07-03) ----
+   Keyed by the trailing digits in the row name ("DAWN.W 5708" -> 5708).
+   [start, end] in 24h decimal hours; null = unavailable that weekday. */
+const AVAIL = {
+  "7047":{Sat:[5,22],Sun:[5,22],Mon:[5,22],Tue:[5,22],Wed:[5,22],Thu:[5,22],Fri:[5,22]},        // FLYNN, LIAM
+  "5708":{Sat:[4,14],Sun:[4,14],Mon:[4,14],Tue:null,Wed:null,Thu:[4,14],Fri:[4,14]},            // WARD, DAWN
+  "9750":{Sat:[4,16],Sun:null,Mon:null,Tue:[4,16],Wed:[4,16],Thu:[4,16],Fri:[4,16]},            // FISCHER, GABRIELLE
+  "3503":{Sat:[5,22],Sun:[5,22],Mon:[9,22],Tue:[9,22],Wed:[9,22],Thu:null,Fri:[4,17]},          // HANNAH, CHEYANNE (DM)
+  "6547":{Sat:[5,22],Sun:[5,22],Mon:[5,22],Tue:[5,22],Wed:[5,22],Thu:[5,22],Fri:[5,22]},        // JENKINS, RYAN
+  "1256":{Sat:[7,22],Sun:[7,22],Mon:null,Tue:null,Wed:[18,22],Thu:null,Fri:null},               // BAUER, AUSTIN
+  "8836":{Sat:[7,22],Sun:[7,22],Mon:[8,22],Tue:[8,22],Wed:[8,22],Thu:[8,22],Fri:[8,22]},        // SCHWARTZ, KEITH
+  "3659":{Sat:[5,22],Sun:[5,22],Mon:null,Tue:[4,9],Wed:null,Thu:[17,22],Fri:[17,22]},           // EBBY PALATTY, ROBBIN
+  "0757":{Sat:[7,22],Sun:[7,22],Mon:[7,22],Tue:[7,22],Wed:[7,22],Thu:[7,22],Fri:[7,22]},        // WARSON, HANY
+  "0889":{Sat:[9,22],Sun:[9,22],Mon:[9,22],Tue:[9,22],Wed:null,Thu:null,Fri:[9,22]},            // HOGAN HUSLER, SAVANNAH (DM)
+  "3450":{Sat:[4,22],Sun:null,Mon:[8,16.5],Tue:[8,16.5],Wed:[8,16.5],Thu:[8,16.5],Fri:[8,16.5]},// JOSHI, ANJALI
+  "6428":{Sat:[5,22],Sun:[5,22],Mon:null,Tue:null,Wed:[5,22],Thu:null,Fri:null},                // FLORES, COLIN
+  "8609":{Sat:[6,22],Sun:[6,22],Mon:[8,15.5],Tue:null,Wed:[8,15.5],Thu:[8,15.5],Fri:null},      // MERRIMAN, CHRISTINA
+  "4020":{Sat:[6,22],Sun:[6,22],Mon:[6,22],Tue:[6,22],Wed:[6,22],Thu:[6,22],Fri:[6,22]},        // SIEMINSKI, HAYDEN
+  "2786":{Sat:[16,22],Sun:null,Mon:[7,22],Tue:[7,22],Wed:[16,22],Thu:[16,22],Fri:[16,22]},      // TAK, TRISHA
+  "5650":{Sat:null,Sun:null,Mon:[4,14],Tue:[4,14],Wed:[4,14],Thu:[4,14],Fri:[4,14]},            // JENKINS, ANGELA
+  "2226":{Sat:[7,22],Sun:null,Mon:[4,14],Tue:[4,14],Wed:null,Thu:[4,14],Fri:[7,10]},            // NOEL, ANNIKA
+  "3098":{Sat:[9,19],Sun:[9,19],Mon:[8,21],Tue:[8,21],Wed:[8,21],Thu:[8,21],Fri:[8,21]},        // PATRA, BENUDHAR (DM)
+  "1853":{Sat:null,Sun:[15,22],Mon:[7,14.75],Tue:[15.5,22],Wed:[15.5,22],Thu:[7,14.75],Fri:[7,14.75]}, // RINKU (Mon "2:45 am" read as 2:45 pm)
+  "1787":{Sat:null,Sun:[8,18],Mon:[8,18],Tue:null,Wed:[9,22],Thu:[8,18],Fri:[8,18]},            // ROBINSON, CAITLYN
+  "9488":{Sat:[8,16],Sun:[8,16],Mon:[6,15],Tue:null,Wed:[8,22],Thu:[6,22],Fri:[6,15]},          // SINGH, GURSHARANDEEP
+  "7355":{Sat:[4,14],Sun:[4,14],Mon:null,Tue:[4,14],Wed:[4,14],Thu:[4,14],Fri:null},            // TRAIL, OLITHEA
+};
+function weekdayOf(dateStr){ const m=String(dateStr||"").match(/\b(Sat|Sun|Mon|Tue|Wed|Thu|Fri)/i);
+  return m ? m[1][0].toUpperCase()+m[1].slice(1).toLowerCase() : null; }
+function availFor(name, dateStr){
+  const wd = weekdayOf(dateStr); if(!wd) return undefined;      // no weekday in the date -> no constraint
+  const id = String(name||"").match(/(\d{4,})\s*$/);
+  const rec = id && AVAIL[id[1].slice(-4)];
+  return rec ? rec[wd] : undefined;   // [start,end] | null (off that day) | undefined (no data)
+}
+
 /* ---- Break policy (edit these numbers to match your store) ----
    Tiered by hours worked. Lunch = 60 min, breaks = 15 min.        */
 const LUNCH = 1.0, BRK = 0.25, STAGGER = 1.0;  // offset per same-start associate
@@ -670,15 +706,21 @@ function renderOptimize(){
   document.getElementById("optPreview").innerHTML = GRID_HEAD + `<tbody>${shiftRows(people)}</tbody>`;
 }
 function renderFlags(){
+  const wd = weekdayOf(cur().date);
   document.getElementById("flags").innerHTML =
-    `<thead><tr><th>Associate</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="c" title="Closed yesterday — can't open; earliest start ${fmt(NO_OPEN_BEFORE)}">🌙 Closed yday</th><th class="col-actions"></th></tr></thead><tbody>` +
-    cur().shifts.map((s,i)=>`<tr>
+    `<thead><tr><th>Associate</th><th>Avail. ${wd||'<span class="empty">(put the weekday in the date)</span>'}</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="c" title="Closed yesterday — can't open; earliest start ${fmt(NO_OPEN_BEFORE)}">🌙 Closed yday</th><th class="col-actions"></th></tr></thead><tbody>` +
+    cur().shifts.map((s,i)=>{
+      const av = availFor(s.name, cur().date);
+      const avTxt = av===undefined ? '<span class="empty">no data</span>'
+        : (av===null ? '<b style="color:var(--danger)">OFF this day</b>' : `${fmt(av[0])} – ${fmt(av[1])}`);
+      return `<tr>
       <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}</td>
+      <td>${avTxt}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="cl" ${s.cl?"checked":""}></td>
       <td class="col-actions"><button class="btn-x" data-fdel="${i}" title="Remove from this day">✕</button></td>
-    </tr>`).join("") + `</tbody>`;
+    </tr>`;}).join("") + `</tbody>`;
 }
 function showView(v){
   v = (v==="optimize") ? "optimize" : "schedule";
@@ -717,15 +759,27 @@ function optimizeStarts(){
   // Fill target slots in TIME ORDER: each slot takes the closest still-unplaced
   // eligible person. Early targets (4A, 5A…) are satisfied first, so when there
   // are more target slots than people, the shortfall lands at the end of the day.
-  const pool = [...all].map(p=>{
-    const len = Math.max(1, Math.min(Math.round(p.len*sph), n));
+  const offToday = [];
+  const pool = [];
+  for(const p of all){
+    const av = availFor(day.shifts[p.i].name, day.date);
+    if(av === null){ offToday.push(day.shifts[p.i].name); continue; }  // not available that weekday: left unmoved
+    let len = Math.max(1, Math.min(Math.round(p.len*sph), n));
     let min = p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
     if(p.cl) min = Math.max(min, h2i(NO_OPEN_BEFORE));   // closed yesterday -> can't open
+    let end = n;                                          // latest slot the shift may end on
+    if(av){
+      min = Math.max(min, Math.max(0, h2i(av[0])));
+      end = Math.min(n, Math.max(min+1, h2i(av[1])));
+      len = Math.min(len, end - min);                     // shift longer than the window: trim to fit
+    }
     const lo = Math.min(min, n-len);
-    const hi = p.am ? Math.min(n-len, Math.max(lo, h2i(12)-1)) : n-len;
+    let hi = Math.min(n-len, end-len);
+    if(p.am) hi = Math.min(hi, Math.max(lo, h2i(12)-1));
+    hi = Math.max(hi, lo);
     const ws = Math.max(0, Math.min(h2i(p.start), n));
-    return {p, len, lo, hi, ws};
-  });
+    pool.push({p, len, lo, hi, ws});
+  }
   const placed = [];
   want.sort((a,b)=>a-b);
   for(const t of want){
@@ -748,6 +802,8 @@ function optimizeStarts(){
     }
   }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
+  if(offToday.length)
+    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + offToday.join(", "));
 
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
