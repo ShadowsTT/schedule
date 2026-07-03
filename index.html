@@ -908,22 +908,30 @@ function optimizeStarts(){
       const id = String(nm||"").match(/(\d{4,})\s*$/); if(!id) return null;
       const m = prev.shifts.find(s=>String(s.name||"").trim().endsWith(id[1])); return m ? parseTime(m.start) : null; };
     dmPool.forEach(c=>{ c.yst = prevStart(day.shifts[c.p.i].name); });
-    dmPool.sort((a,b)=> ((b.yst??-1)-(a.yst??-1)) || (a.ws-b.ws));
-    const last = dmPool.length-1;
-    const roles = dmPool.map((c,k)=> k===0 ? "open" : (k===last ? "close" : "mid"));
-    if(dmPool.length===1 && dmPool[0].yst!=null && dmPool[0].yst<12) roles[0]="close"; // solo DM alternates daily
-    // anchor the ends first, then space the mid DMs' starts EVENLY between them
-    const tOf = {};
-    dmPool.forEach((c,k)=>{ if(roles[k]==="open") tOf[k]=c.lo; else if(roles[k]==="close") tOf[k]=c.hi; });
-    const t0 = tOf[0] ?? 0, t1 = tOf[last] ?? Math.max(0,n-1);
-    dmPool.forEach((c,k)=>{
-      if(tOf[k]==null)
-        tOf[k] = Math.max(c.lo, Math.min(c.hi, Math.round(t0 + (t1-t0)*k/Math.max(1,last))));
-      placed.push({p:c.p, s:tOf[k], len:c.len, lo:c.lo, fix:true});   // role placements never get gap-pulled
-      let bi=-1, bd=1e9;                                 // the DM covers the target slot nearest their start
-      want.forEach((w,j)=>{ const d=Math.abs(w-tOf[k]); if(d<bd){bd=d;bi=j;} });
-      if(bi>=0) want.splice(bi,1);
-    });
+    // Roles by CAPABILITY first (who can actually cover open/close), rotation breaks ties:
+    // closer = can stay latest (tie: yesterday's opener), opener = can start earliest
+    // (tie: yesterday's latest start). Remaining DMs spread evenly between them.
+    let opener=null, closer=null, mids=[];
+    if(dmPool.length===1){
+      const c=dmPool[0];
+      if(c.yst!=null && c.yst<12) closer=c; else opener=c;   // solo DM alternates daily
+    } else {
+      const rest=[...dmPool];
+      rest.sort((a,b)=> (b.hi-a.hi) || ((a.yst??1e9)-(b.yst??1e9)));
+      closer=rest.shift();
+      rest.sort((a,b)=> (a.lo-b.lo) || ((b.yst??-1)-(a.yst??-1)));
+      opener=rest.shift();
+      mids=rest.sort((a,b)=>a.ws-b.ws);
+    }
+    const t0 = opener ? opener.lo : 0, t1 = closer ? closer.hi : Math.max(0,n-1);
+    const put=(c,t)=>{ placed.push({p:c.p, s:t, len:c.len, lo:c.lo, fix:true});  // roles never gap-pulled
+      let bi=-1, bd=1e9;                             // the DM covers the target slot nearest their start
+      want.forEach((w,j)=>{ const d=Math.abs(w-t); if(d<bd){bd=d;bi=j;} });
+      if(bi>=0) want.splice(bi,1); };
+    if(opener) put(opener, t0);
+    mids.forEach((c,j)=>{ const frac=(j+1)/(mids.length+1);
+      put(c, Math.max(c.lo, Math.min(c.hi, Math.round(t0+(t1-t0)*frac)))); });
+    if(closer) put(closer, t1);
   }
   want.sort((a,b)=>a-b);
   for(const t of want){
