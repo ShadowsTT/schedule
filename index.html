@@ -897,6 +897,10 @@ function optimizeDay(di){
   const want = [];
   Object.keys(dem).map(Number).filter(h=>dem[h]>0).sort((a,b)=>a-b)
     .forEach(h=>{ for(let j=0;j<dem[h];j++) want.push(Math.max(0,Math.min(h2i(h),n-1))); });
+  // Hours with target 0 get NOBODY: every floor clock-in must land on a slot
+  // whose hour has a target above zero. tSlots = the allowed start slots.
+  const tSlots = [...new Set(Object.keys(dem).map(Number).filter(h=>dem[h]>0)
+    .map(h=>Math.max(0,Math.min(h2i(h),n-1))))].sort((x,y)=>x-y);
   // Fill target slots in TIME ORDER: each slot takes the closest still-unplaced
   // eligible person. Early targets (4A, 5A…) are satisfied first, so when there
   // are more target slots than people, the shortfall lands at the end of the day.
@@ -977,12 +981,18 @@ function optimizeDay(di){
   }
   // more people than slots: leftovers stay as close to their current time as the rules allow
   floorPool.forEach(c=>{
+    const nm = day.shifts[c.p.i].name;
     const s0 = Math.max(c.lo, Math.min(c.ws, c.hi));
-    let s = s0;
-    if(apartClash(day.shifts[c.p.i].name, s0, c.len)){       // nearest start that avoids the partner
-      for(let d=1; d<=n; d++){
-        const cand = [s0+d, s0-d].find(x => x>=c.lo && x<=c.hi && !apartClash(day.shifts[c.p.i].name, x, c.len));
-        if(cand!=null){ s=cand; break; }
+    let s = null, bd=1e9;                                    // nearest TARGET hour, avoiding the partner
+    for(const ts of tSlots){ if(ts<c.lo||ts>c.hi) continue; if(apartClash(nm, ts, c.len)) continue;
+      const dd=Math.abs(ts-s0); if(dd<bd){bd=dd;s=ts;} }
+    if(s==null){                                             // no target hour fits: nearest legal start
+      s=s0;
+      if(apartClash(nm, s0, c.len)){
+        for(let d=1; d<=n; d++){
+          const cand = [s0+d, s0-d].find(x => x>=c.lo && x<=c.hi && !apartClash(nm, x, c.len));
+          if(cand!=null){ s=cand; break; }
+        }
       }
     }
     placed.push({p:c.p, s, len:c.len, lo:c.lo});
@@ -993,8 +1003,15 @@ function optimizeDay(di){
   for(let k=1;k<placed.length;k++){
     const q=placed[k];
     if(q.s-placed[k-1].s>G && !q.fix){                   // the closing DM never gets pulled off close
-      const ns = Math.max(Math.min(placed[k-1].s+G, n-q.len), q.lo);
-      if(ns!==q.s && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
+      const hiCap = Math.min(placed[k-1].s+G, n-q.len);
+      let ns=null;                                           // latest TARGET hour that closes the gap AND still has room
+      for(const ts of tSlots){
+        if(!(ts>=q.lo && ts<=hiCap && ts<q.s)) continue;
+        const cap = dem[Math.floor(OPEN+ts/sph)]||0;
+        if(placed.filter(x=>x!==q && x.s===ts).length >= cap) continue;   // that hour already hit its target
+        if(ns==null||ts>ns) ns=ts;
+      }
+      if(ns!=null && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
     }
   }
   // report any gap the rules wouldn't let us close, and name the blocking rule
@@ -1008,6 +1025,9 @@ function optimizeDay(di){
     else {
       const desired=Math.max(Math.min(prevS+G, n-q.len), 0);
       if(apartClash(nm, Math.max(desired,q.lo), q.len, q)) why="keep-apart rule";
+      else if(!tSlots.some(ts=>{ if(ts>Math.min(prevS+G, n-q.len)) return false;
+        const cap=dem[Math.floor(OPEN+ts/sph)]||0; return placed.filter(x=>x!==q&&x.s===ts).length<cap; }))
+        why="no open clock-in target within 1½h";
       else {
         const av=availFor(nm, day.date);
         const avLo=av?Math.max(0,h2i(av[0])):0, dmLo=q.p.dm?h2i(DM_MIN):0;
