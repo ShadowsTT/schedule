@@ -140,6 +140,19 @@
     .toolbar{padding:0 16px 18px;} footer{padding:16px 18px 22px;}
     th,td{padding:8px 8px;}
   }
+  /* ---- decluttered look ---- */
+  .toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .btn-ghost.dim { color:#94a3b8; font-size:12px; }
+  .rulehint { font-size:11.5px; color:var(--muted); margin:10px 2px 0; }
+  details.acc { border:1px solid var(--line); border-radius:12px; margin:16px 0 0; background:#fff; overflow:hidden; }
+  details.acc summary { cursor:pointer; padding:12px 16px; font-size:11.5px; font-weight:700; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.08em; list-style:none; display:flex; align-items:center; user-select:none; background:#f8fafc; }
+  details.acc summary::-webkit-details-marker { display:none; }
+  details.acc summary::after { content:"›"; margin-left:auto; font-size:15px; transform:rotate(90deg); transition:transform .15s; }
+  details.acc[open] summary::after { transform:rotate(-90deg); }
+  details.acc > *:not(summary) { padding:6px 14px 14px; }
+  #weekBar button { cursor:pointer; }
+  .daybar { row-gap:10px; }
   @media print {
     body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;max-width:none;}
     header{padding:14px 20px;} header h1{font-size:19px;} header .stats{margin-top:10px;}
@@ -208,14 +221,16 @@
   <div class="toolbar">
     <button class="btn-ghost" id="addBtn">+ Add associate</button>
     <button class="btn-primary" id="saveBtn">Save</button>
-    <button class="btn-ghost" onclick="printAs('portrait')">Print Day (Portrait)</button>
-    <button class="btn-ghost" onclick="printAs('landscape')">Print Day (Landscape)</button>
-    <button class="btn-primary" onclick="printWeek('landscape')">Print Week</button>
-    <button class="btn-ghost" id="resetBtn">Reset to defaults</button>
-    <button class="btn-ghost" id="exportBtn" title="Download all days as a file">⬇ Backup</button>
-    <button class="btn-ghost" id="importBtn" title="Load days from a backup file">⬆ Restore</button>
-    <input type="file" id="importFile" accept="application/json,.json" hidden>
     <span class="saved" id="savedMsg">Saved ✓</span>
+    <span style="flex:1"></span>
+    <button class="btn-ghost" onclick="printAs('portrait')">Print day ↧</button>
+    <button class="btn-ghost" onclick="printAs('landscape')">Print day ↦</button>
+    <button class="btn-primary" onclick="printWeek('landscape')">Print week</button>
+    <span style="width:1px;height:22px;background:var(--line)"></span>
+    <button class="btn-ghost dim" id="exportBtn" title="Download all days as a file">⬇ Backup</button>
+    <button class="btn-ghost dim" id="importBtn" title="Load days from a backup file">⬆ Restore</button>
+    <button class="btn-ghost dim" id="resetBtn" title="Reset everything to the built-in sample days">Reset</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
   </div>
 
   <section>
@@ -259,21 +274,22 @@
       <span class="empty" style="font-style:normal">Type how many should clock in each hour</span>
     </div>
     <div class="gridscroll"><table class="cov" id="cov"></table></div>
-    <h2 style="margin-top:20px"><span class="ico">🔒</span>Per-associate rules <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— tick ☀ for who must be in the morning</span></h2>
-    <table class="grid" id="flags" style="max-width:520px"></table>
-    <h2 style="margin-top:18px"><span class="ico">📊</span>Week hours <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— part-timers capped at 30h/week</span></h2>
-    <div class="tablescroll"><table class="grid" id="weekHours"></table></div>
-    <div class="optbar">
-      <button class="btn-primary" id="balanceBtn">⚖ Balance hours (whole week)</button>
-      <span class="empty" style="font-style:normal">Brings every day with a demand number up to demand+10h by extending/trimming part-timers only (PT shifts kept between 6–7½h, PT ≤ 30h/week). Full-timers never change. Re-run ⚙ Optimize per day afterwards.</span>
-    </div>
-    <div class="optbar">
-      <button class="btn-primary" id="weekBtn" style="background:linear-gradient(135deg,#7c3aed,#2563eb)">⚡ Do the whole week</button>
-      <button class="btn-primary" id="optBtn">⚙ Optimize start times (this day)</button>
+    <div class="optbar" style="margin-top:16px">
+      <button class="btn-primary" id="weekBtn" style="background:linear-gradient(135deg,#7c3aed,#2563eb)" title="Balances part-timer hours, then optimizes every day in order. One Undo restores the whole week.">⚡ Do the whole week</button>
+      <button class="btn-primary" id="optBtn" title="Re-time this day's shifts to hit the clock-in targets">⚙ Optimize this day</button>
+      <button class="btn-ghost" id="balanceBtn" title="Extend/trim part-timers so each day reaches demand+10h (PT shifts 6–7½h, ≤30h/week). Full-timers never change.">⚖ Balance hours</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
-      <span class="empty" style="font-style:normal">Shifts keep their length and move to hit your targets. ☀ AM = must start before noon · DM = never before 7 AM · 🌙 closers (auto-detected from the previous day, or ticked) = earliest start 9 AM · clock-ins at most 1½h apart.</span>
     </div>
+    <p class="rulehint">☀ morning = start before noon &nbsp;·&nbsp; DM ≥ 7 AM, rotating open / mid / close &nbsp;·&nbsp; 🌙 closers rest until 9 AM &nbsp;·&nbsp; clock-ins ≤ 1½ h apart &nbsp;·&nbsp; availability always wins</p>
+    <details class="acc" open>
+      <summary>🔒 Per-associate rules & availability</summary>
+      <div class="tablescroll"><table class="grid" id="flags" style="max-width:680px"></table></div>
+    </details>
+    <details class="acc">
+      <summary>📊 Week hours — part-timers capped at 30h</summary>
+      <div class="tablescroll"><table class="grid" id="weekHours"></table></div>
+    </details>
   </section>
   <section>
     <h2><span class="ico">📋</span>Resulting schedule (preview)</h2>
