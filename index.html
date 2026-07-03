@@ -1087,6 +1087,7 @@ function printWeek(orient){
   try{
     const d=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));
     const dayList = Array.isArray(d.days) ? d.days : [d];
+    if(Array.isArray(d.days)) { state.days = []; state.active = 0; }   // a week import replaces everything
     let first = -1;
     for(const dd of dayList){
       const date = dd.date||"Imported day";
