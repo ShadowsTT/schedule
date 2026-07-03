@@ -433,14 +433,16 @@ const SEED_DAYS = [
 const SEED_V = 2;   // bump when adding new SEED_DAYS to merge them into existing saved data
 const KEY = "scheduleDashboard_v3";
 
-const freshState = () => ({ v:2, active:0, demand:{}, days: structuredClone(SEED_DAYS) });
+// Jeff's standing clock-in targets (same every week): 2 at 4-5 AM, then 1 per hour to 9 PM
+const DEFAULT_TARGETS = {4:2,5:2,6:1,7:1,8:1,9:1,10:1,11:1,12:1,13:1,14:1,15:1,16:1,17:1,18:1,19:1,20:1,21:1};
+const freshState = () => ({ v:2, active:0, demand:{...DEFAULT_TARGETS}, days: structuredClone(SEED_DAYS) });
 let state = load();
 function load(){
   try {
     let s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.shifts && !s.days) s = { v:2, active:0, days:[ s ] };  // migrate old single-day
     if(s && s.days){
-      s.demand = s.demand || {};
+      if(!s.demand || !Object.keys(s.demand).length) s.demand = {...DEFAULT_TARGETS};
       if((s.seedV||0) < SEED_V){                    // merge newly-added seed days, once
         const have = new Set(s.days.map(d=>d.date));
         SEED_DAYS.forEach(d=>{ if(!have.has(d.date)) s.days.push(structuredClone(d)); });
