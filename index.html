@@ -281,7 +281,7 @@
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
     </div>
-    <p class="rulehint">☀ morning = start before noon &nbsp;·&nbsp; DM ≥ 7 AM, rotating open / mid / close &nbsp;·&nbsp; 🌙 closers rest until 9 AM &nbsp;·&nbsp; clock-ins ≤ 1½ h apart &nbsp;·&nbsp; availability always wins</p>
+    <p class="rulehint">☀ morning = start before noon &nbsp;·&nbsp; DM ≥ 7 AM, rotating open / mid / close &nbsp;·&nbsp; 🌙 closers rest until 9 AM &nbsp;·&nbsp; clock-ins ≤ 1½ h apart (under 13 in: spread ≥ 1½ h after 5 AM) &nbsp;·&nbsp; availability always wins</p>
     <details class="acc" open>
       <summary>🔒 Per-associate rules & availability</summary>
       <div class="tablescroll"><table class="grid" id="flags" style="max-width:680px"></table></div>
@@ -872,6 +872,8 @@ function showView(v){
    ☀ AM shifts must START before noon · DMs never before 7 AM ·
    consecutive clock-ins at most 1.5h apart (locks win over the gap rule). */
 const OPEN = 4, MAXGAP = 1.5, DM_MIN = 7, CLOSE = 22, OVERSTAFF_PENALTY = 0.34;
+// Light day: fewer than LIGHT_DAY associates -> arrivals after 5 AM spread at least LIGHT_SPACING apart
+const LIGHT_DAY = 13, LIGHT_SPACING = 1.5;
 // ponytail: clopen rule — anyone whose previous-day shift ended at/after
 // CLOSE_CUTOFF is a closer and can't start before NO_OPEN_BEFORE the next day.
 // Auto-detected from the previous day in the list; the 🌙 checkbox is the manual override.
@@ -962,7 +964,7 @@ function optimizeDay(di){
       mids=rest.sort((a,b)=>a.ws-b.ws);
     }
     const t0 = opener ? opener.lo : 0, t1 = closer ? closer.hi : Math.max(0,n-1);
-    const put=(c,t)=>{ placed.push({p:c.p, s:t, len:c.len, lo:c.lo, fix:true});  // roles never gap-pulled
+    const put=(c,t)=>{ placed.push({p:c.p, s:t, len:c.len, lo:c.lo, hi:c.hi, fix:true});  // roles never gap-pulled
       let bi=-1, bd=1e9;                             // the DM covers the target slot nearest their start
       want.forEach((w,j)=>{ const d=Math.abs(w-t); if(d<bd){bd=d;bi=j;} });
       if(bi>=0) want.splice(bi,1); };
@@ -973,19 +975,26 @@ function optimizeDay(di){
   }
   want.sort((a,b)=>a-b);
   for(const t of want){
-    let bi=-1, bd=1e9;
-    floorPool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; if(apartClash(day.shifts[c.p.i].name, t, c.len)) return; const d=Math.abs(t-c.ws); if(d<bd){bd=d;bi=j;} });
+    let bi=-1, bd=1e9, bw=1e9;
+    floorPool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; if(apartClash(day.shifts[c.p.i].name, t, c.len)) return;
+      const d=Math.abs(t-c.ws), w=c.hi-c.lo;               // tie-break: tightest window first
+      if(d<bd || (d===bd && w<bw)){bd=d;bw=w;bi=j;} });
     if(bi<0) continue;                                   // nobody can legally take this slot
     const c = floorPool.splice(bi,1)[0];
-    placed.push({p:c.p, s:t, len:c.len, lo:c.lo});
+    placed.push({p:c.p, s:t, len:c.len, lo:c.lo, hi:c.hi});
   }
   // more people than slots: leftovers stay as close to their current time as the rules allow
   floorPool.forEach(c=>{
     const nm = day.shifts[c.p.i].name;
     const s0 = Math.max(c.lo, Math.min(c.ws, c.hi));
-    let s = null, bd=1e9;                                    // nearest TARGET hour, avoiding the partner
-    for(const ts of tSlots){ if(ts<c.lo||ts>c.hi) continue; if(apartClash(nm, ts, c.len)) continue;
-      const dd=Math.abs(ts-s0); if(dd<bd){bd=dd;s=ts;} }
+    let s = null, bd=1e9;                                    // nearest OPEN target hour, avoiding the partner
+    for(const pass of [0,1]){                                // pass 0: hours with room · pass 1: any target hour
+      for(const ts of tSlots){ if(ts<c.lo||ts>c.hi) continue; if(apartClash(nm, ts, c.len)) continue;
+        if(pass===0){ const cap=dem[Math.floor(OPEN+ts/sph)]||0;
+          if(placed.filter(x=>x.s===ts).length>=cap) continue; }
+        const dd=Math.abs(ts-s0); if(dd<bd){bd=dd;s=ts;} }
+      if(s!=null) break;
+    }
     if(s==null){                                             // no target hour fits: nearest legal start
       s=s0;
       if(apartClash(nm, s0, c.len)){
@@ -995,10 +1004,27 @@ function optimizeDay(di){
         }
       }
     }
-    placed.push({p:c.p, s, len:c.len, lo:c.lo});
+    placed.push({p:c.p, s, len:c.len, lo:c.lo, hi:c.hi});
   });
   // hard rule: consecutive clock-ins never more than MAXGAP apart
   const G = Math.round(MAXGAP*sph);
+  if(all.length < LIGHT_DAY){
+    // Light day (<13 in): spread arrivals AFTER 5 AM at least 1.5h apart (openers at/before 5 stay)
+    const S = Math.round(LIGHT_SPACING*sph), five = h2i(5);
+    placed.sort((a,b)=>a.s-b.s);
+    let prevS2=null;
+    for(const q of placed){
+      if(prevS2!=null && q.s>five && q.s-prevS2<S && !q.fix){
+        const nm=day.shifts[q.p.i].name;
+        let ns=Math.min(prevS2+S, n-q.len, q.hi!=null?q.hi:(n-q.len));
+        if(q.p.am) ns=Math.min(ns, Math.max(q.lo, h2i(12)-1));   // morning rule still wins
+        ns=Math.max(ns, q.lo, q.s);                               // only push later
+        if(ns!==q.s && !apartClash(nm, ns, q.len, q)) q.s=ns;
+      }
+      prevS2=q.s;
+    }
+    placed.sort((a,b)=>a.s-b.s);
+  } else {
   placed.sort((a,b)=>a.s-b.s);
   for(let k=1;k<placed.length;k++){
     const q=placed[k];
@@ -1013,6 +1039,7 @@ function optimizeDay(di){
       }
       if(ns!=null && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
     }
+  }
   }
   // report any gap the rules wouldn't let us close, and name the blocking rule
   const gapNotes=[];
