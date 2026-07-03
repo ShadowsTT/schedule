@@ -791,15 +791,19 @@ function optimizeStarts(){
       const m = prev.shifts.find(s=>String(s.name||"").trim().endsWith(id[1])); return m ? parseTime(m.start) : null; };
     dmPool.forEach(c=>{ c.yst = prevStart(day.shifts[c.p.i].name); });
     dmPool.sort((a,b)=> ((b.yst??-1)-(a.yst??-1)) || (a.ws-b.ws));
+    const last = dmPool.length-1;
+    const roles = dmPool.map((c,k)=> k===0 ? "open" : (k===last ? "close" : "mid"));
+    if(dmPool.length===1 && dmPool[0].yst!=null && dmPool[0].yst<12) roles[0]="close"; // solo DM alternates daily
+    // anchor the ends first, then space the mid DMs' starts EVENLY between them
+    const tOf = {};
+    dmPool.forEach((c,k)=>{ if(roles[k]==="open") tOf[k]=c.lo; else if(roles[k]==="close") tOf[k]=c.hi; });
+    const t0 = tOf[0] ?? 0, t1 = tOf[last] ?? Math.max(0,n-1);
     dmPool.forEach((c,k)=>{
-      let role = k===0 ? "open" : (k===dmPool.length-1 ? "close" : "mid");
-      if(dmPool.length===1 && c.yst!=null && c.yst<12) role = "close";   // solo DM alternates daily
-      const t = role==="open" ? c.lo
-              : role==="close" ? c.hi                                    // as late as allowed -> ends at close
-              : Math.max(c.lo, Math.min(c.hi, Math.round(h2i(13) - c.len/2)));
-      placed.push({p:c.p, s:t, len:c.len, lo:c.lo, fix: role==="close"});
+      if(tOf[k]==null)
+        tOf[k] = Math.max(c.lo, Math.min(c.hi, Math.round(t0 + (t1-t0)*k/Math.max(1,last))));
+      placed.push({p:c.p, s:tOf[k], len:c.len, lo:c.lo, fix:true});   // role placements never get gap-pulled
       let bi=-1, bd=1e9;                                 // the DM covers the target slot nearest their start
-      want.forEach((w,j)=>{ const d=Math.abs(w-t); if(d<bd){bd=d;bi=j;} });
+      want.forEach((w,j)=>{ const d=Math.abs(w-tOf[k]); if(d<bd){bd=d;bi=j;} });
       if(bi>=0) want.splice(bi,1);
     });
   }
