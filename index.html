@@ -499,6 +499,9 @@ function availFor(name, dateStr){
 /* ---- Weekly hours: demand buffer + part-timer 30h cap ---- */
 const WEEK_BUFFER = 10, PT_MAX_HOURS = 30, PT_SHIFT_MIN = 6, PT_SHIFT_MAX = 7.5;  // PT shifts only adjusted within 6-7.5h
 const PART_TIME = new Set(["7047","6547","1256","8836","3659","0757","3450","8609","4020","2786","1853","9488","6428"]);  // ANNIKA 2226 = FT; TASHA 8506 left the team
+// Standing morning rule: these associates are always placed to start before noon
+// (ANGELA 5650, OLITHEA 7355, GABRIELLE 9750, CAITLYN 1787, ANJALI 3450, ANNIKA 2226)
+const MORNING = new Set(["5650","7355","9750","1787","3450","2226"]);
 const idOf = n => { const m = String(n||"").match(/(\d{4,})\s*$/); return m ? m[1].slice(-4) : null; };
 const isPT = n => PART_TIME.has(idOf(n)||"");
 const paidLenH = (a,b) => { const L=b-a; return L>0 ? L-(L>=6?1:0) : 0; };   // lunch unpaid on 6h+
@@ -832,7 +835,7 @@ function renderFlags(){
       <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}${closedPrevDay(s.name,state.active)?' <span title="closed the previous day — earliest start '+fmt(NO_OPEN_BEFORE)+'">🌙</span>':''}</td>
       <td>${avTxt}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
-      <td class="c"><input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}></td>
+      <td class="c">${MORNING.has(idOf(s.name)||"") ? '<input type="checkbox" checked disabled title="standing rule: always morning">' : `<input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}>`}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="cl" ${s.cl?"checked":""}></td>
       <td class="col-actions"><button class="btn-x" data-fdel="${i}" title="Remove from this day">✕</button></td>
     </tr>`;}).join("") + `</tbody>`;
@@ -866,7 +869,7 @@ function optimizeDay(di){
   const day = state.days[di];
   const all=[];
   day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
-    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am, cl:!!s.cl }); });
+    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am||MORNING.has(idOf(s.name)||""), cl:!!s.cl }); });
   if(all.length<2) return null;
 
   const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
