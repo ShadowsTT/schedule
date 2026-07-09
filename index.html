@@ -444,6 +444,7 @@ function load(){
     let s = JSON.parse(localStorage.getItem(KEY));
     if(s && s.shifts && !s.days) s = { v:2, active:0, days:[ s ] };  // migrate old single-day
     if(s && s.days){
+      s.days.forEach(d=>{ d.shifts=(d.shifts||[]).filter(x=>!/8506\s*$/.test(String(x.name||""))); });  // TASHA left
       const base = (s.demand && Object.keys(s.demand).length) ? s.demand : DEFAULT_TARGETS;
       s.days.forEach(d=>{ if(!d.demand || !Object.keys(d.demand).length) d.demand = {...base}; });
       if((s.seedV||0) < SEED_V){                    // merge newly-added seed days, once
@@ -523,6 +524,8 @@ const PART_TIME = new Set(["7047","6547","1256","8836","3659","0757","3450","860
 // Standing morning rule: these associates are always placed to start before noon
 // (ANGELA 5650, OLITHEA 7355, GABRIELLE 9750, CAITLYN 1787, ANJALI 3450, ANNIKA 2226)
 const MORNING = new Set(["5650","7355","9750","1787","3450","2226"]);
+// People no longer with the team — stripped from every import and saved day
+const EXCLUDED = new Set(["8506"]);   // TASHA left 2026-07
 const idOf = n => { const m = String(n||"").match(/(\d{4,})\s*$/); return m ? m[1].slice(-4) : null; };
 const isPT = n => PART_TIME.has(idOf(n)||"");
 const paidLenH = (a,b) => { const L=b-a; return L>0 ? L-(L>=6?1:0) : 0; };   // lunch unpaid on 6h+
@@ -1296,7 +1299,7 @@ function printWeek(orient){
     let first = -1;
     for(const dd of dayList){
       const date = dd.date||"Imported day";
-      const shifts = (dd.employees||[]).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
+      const shifts = (dd.employees||[]).filter(e=>!EXCLUDED.has(idOf(e.name)||"")).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
       if(!shifts.length) continue;
       let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
       if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
