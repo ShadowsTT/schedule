@@ -1085,6 +1085,21 @@ function optimizeDay(di){
   }
   placed.sort((a,b)=>a.s-b.s);
 
+  // report target hours that ended up OVER their count (window-locked people)
+  const overNotes=[];
+  {
+    const bySlot={};
+    placed.forEach(q=>{ (bySlot[q.s]=bySlot[q.s]||[]).push(q); });
+    for(const ts of tSlots){
+      const cap=dem[Math.floor(OPEN+ts/sph)]||0;
+      const ppl=bySlot[ts]||[];
+      if(ppl.length>cap)
+        overNotes.push(fmt(OPEN+ts/sph)+": "+ppl.length+" in vs target "+cap+" — "+
+          ppl.map(q=>String(day.shifts[q.p.i].name).split(" ")[0]).join(", ")+
+          " (no other open target hour fits their availability window)");
+    }
+  }
+
   // report any gap the rules wouldn't let us close, and name the blocking rule
   const gapNotes=[];
   for(let k=1;k<placed.length;k++){
@@ -1112,7 +1127,7 @@ function optimizeDay(di){
     gapNotes.push(`${fmt(OPEN+prevS/sph)} → ${fmt(OPEN+q.s/sph)} (${short}): ${why}`);
   }
   placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
-  return {off: offToday, gaps: gapNotes, holes: holeNotes};
+  return {off: offToday, gaps: gapNotes, holes: holeNotes, over: overNotes};
 }
 function optimizeStarts(){
   const day = cur();
@@ -1126,6 +1141,8 @@ function optimizeStarts(){
     alert("Clock-in gaps over 1\u00bd h that the rules wouldn't let me close:\n" + r.gaps.join("\n"));
   if(r.holes.length)
     alert("⚠ NO ONE ON THE FLOOR during: " + r.holes.join(", ") + "\n(no shift can legally cover it — check availability or add someone)");
+  if(r.over.length)
+    alert("Target overfilled (people who can't legally start any later):\n" + r.over.join("\n"));
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
 }
@@ -1140,6 +1157,7 @@ function optimizeWeek(){
     if(r.off.length) notes.push(lbl+": not available — "+r.off.join(", "));
     r.gaps.forEach(g=>notes.push(lbl+": gap "+g));
     r.holes.forEach(h=>notes.push(lbl+": ⚠ NO ONE ON FLOOR "+h));
+    r.over.forEach(o=>notes.push(lbl+": over target "+o));
   });
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
