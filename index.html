@@ -723,6 +723,7 @@ function compute(shifts){
   assignTasks(people);          // auto-assign recurring tasks, evenly
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
+  const DISP_START = 6, DISP_END = 20;   // dispensing only runs 6am–8pm
   const timeline = [];
   for(let h=dayStart; h<dayEnd; h++){
     const present  = people.filter(p=>p.start<=h && p.end>h);
@@ -732,7 +733,7 @@ function compute(shifts){
     let on=null;
     // STRICT once-per-day: whoever already had their dispense hour NEVER dispenses again.
     // If everyone present has dispensed, the hour shows no dispenser (visible in the timeline).
-    const pool = eligible.filter(p=>p.disp===0);
+    const pool = (h>=DISP_START && h<DISP_END) ? eligible.filter(p=>p.disp===0) : [];
     if(pool.length){
       pool.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
       on=pool[0]; on.disp++; on.slots.push(slot(h));
@@ -820,7 +821,7 @@ function renderReport(){
   g.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
-const COV_HRS = (()=>{ const a=[]; for(let h=6;h<=20;h++) a.push(h); return a; })();  // 6am–8pm
+const COV_HRS = (()=>{ const a=[]; for(let h=4;h<=21;h++) a.push(h); return a; })();  // 4am–9pm
 function schedStarts(){
   const c={}; cur().shifts.forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); c[h]=(c[h]||0)+1; } });
   return c;
