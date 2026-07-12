@@ -820,7 +820,7 @@ function renderReport(){
   g.innerHTML = head + `<tbody>${body}</tbody>`;
 }
 
-const COV_HRS = (()=>{ const a=[]; for(let h=4;h<=21;h++) a.push(h); return a; })();  // 4am–9pm
+const COV_HRS = (()=>{ const a=[]; for(let h=6;h<=20;h++) a.push(h); return a; })();  // 6am–8pm
 function schedStarts(){
   const c={}; cur().shifts.forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); c[h]=(c[h]||0)+1; } });
   return c;
