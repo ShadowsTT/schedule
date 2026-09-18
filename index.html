@@ -20,6 +20,7 @@
           background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%); }
   header .eyebrow { font-size:11px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; font-weight:600; }
   header h1 { margin:4px 0 0; font-size:25px; font-weight:700; letter-spacing:-.01em; }
+  .draftstamp{display:none;}
   header input.date { margin-top:12px; font-size:14px; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.22);
         color:#fff; padding:8px 12px; border-radius:9px; width:min(380px,100%); backdrop-filter:blur(2px); }
   header input.date::placeholder { color:rgba(255,255,255,.7); }
@@ -1173,7 +1174,7 @@ function renderWeekStats(){
   const wk=weekHours(days), dem=weekDemand(days), diff=Math.round((wk-dem)*4)/4;
   const hasDemand=days.some(d=>d.demandHours!=null);          // a real 0 is not "absent"
   const tile=(b,s,sub,cls="")=>`<div class="stat ${cls}"><b>${b}</b><span>${s}</span>${sub?`<i>${sub}</i>`:""}</div>`;
-  let out=tile(`${wk}h`, "Week worked", `${days.length} day${days.length>1?"s":""} loaded`);
+  let out=tile(`${wk}h`, "Week worked", `${days.length} day${days.length>1?"s":""}${groups.length>1?` · ${weekLabel(days)}`:" loaded"}`);
   if(hasDemand) out+=tile(`${diff>=0?"+":""}${diff}h`, "vs demand", `${dem}h demand`, diff<0?"bad":"good");
   const B=budgetOf(days);
   if(B!=null){
@@ -1225,7 +1226,7 @@ function renderWeekBar(){
     const sched=dayHours(d), dem=d.demandHours;
     const diff=dem==null?null:Math.round((sched-dem)*4)/4;
     const bg=diff==null?"#f8fafc":(diff>=WEEK_BUFFER?"#dcfce7":(diff>=0?"#fef3c7":"#fee2e2"));
-    return `<button data-day="${i}" style="background:${bg};border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer;${i===state.active?"outline:2px solid var(--accent);":""}">${(d.date||"?").split(",")[0]} · ${sched}h${dem!=null?` / ${dem} <b>(${diff>=0?"+":""}${diff})</b>`:""}</button>`;
+    return `<button data-day="${i}" style="background:${bg};border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer;${i>0&&weekdayOf(d.date)==="Sat"?"margin-left:14px;":""}${i===state.active?"outline:2px solid var(--accent);":""}">${(d.date||"?").split(",")[0]} · ${sched}h${dem!=null?` / ${dem} <b>(${diff>=0?"+":""}${diff})</b>`:""}</button>`;
   }).join("");   // week totals now live in the header tiles (renderWeekStats)
   const inp=document.getElementById("demandHrs");
   if(inp && document.activeElement!==inp) inp.value=cur().demandHours ?? "";
@@ -1422,7 +1423,7 @@ function requestCell(s,i){
   const txt = (r.text!=null ? r.text : "").replace(/"/g,'&quot;');
   const p = parseRequest(r.text||"");
   return `<td class="reqcell">
-      <input class="reqin" data-i="${i}" data-k="reqtext" value="${txt}" placeholder="4-12:30">
+      <input class="reqin" data-i="${i}" data-k="reqtext" value="${txt}" placeholder="e.g. 4-12:30">
       ${txt ? (p ? `<button class="btn-ok" data-reqyes="${i}" title="Approve — sets the shift to ${fmt(p.start)}–${fmt(p.end)}">✓</button>
                     <button class="btn-x" data-reqno="${i}" title="Decline">✗</button>`
                  : `<span class="reqbad" title="Write it like 4-12:30">?</span>`) : ""}
