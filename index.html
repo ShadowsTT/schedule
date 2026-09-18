@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <title>Shift &amp; Dispensing Dashboard</title>
 <style>
+  /* Print typography lives here so the off-screen measuring box and the real
+     print stylesheet can never drift apart. */
+  :root { --pgrid-fs:11px; --pgrid-lh:1.45; --pgrid-pad:7px 8px; --pgrid-th-fs:9.5px;
+          --pchip-fs:10px; --pchip-pad:3px 7px; --print-margin:11mm; --print-scale:1; }
   :root { --ink:#0f172a; --muted:#64748b; --line:#e8ecf1; --accent:#2563eb; --accent-soft:#eff4ff;
           --band:#f9fafb; --danger:#dc2626; --teal:#0f766e; --teal-soft:#ecfdf5; --amber:#c2410c; --amber-soft:#fff7ed; }
   * { box-sizing:border-box; }
@@ -26,6 +30,17 @@
   .stat { background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.2); border-radius:11px; padding:9px 15px; min-width:92px; }
   .stat b { display:block; font-size:19px; font-weight:700; line-height:1.1; }
   .stat span { font-size:11px; text-transform:uppercase; letter-spacing:.07em; opacity:.82; }
+  /* week-level tiles sit apart from the per-day tiles */
+  .stats.wk { padding-left:12px; border-left:1px solid rgba(255,255,255,.25); }
+  .stats.wk .stat { background:rgba(255,255,255,.2); }
+  .stat i { font-style:normal; font-size:11px; font-weight:600; opacity:.9; display:block; margin-top:1px; }
+  /* Status tiles get an opaque dark backing rather than tinted text: light text
+     on the translucent tile over the header gradient only reached ~2:1, under
+     the 3:1 that 19px bold needs. */
+  .stat.good, .stat.bad, .stat.mid { border-color:transparent; }
+  .stat.good { background:#065f46; } .stat.good b { color:#ecfdf5; }
+  .stat.bad  { background:#7f1d1d; } .stat.bad  b { color:#fef2f2; }
+  .stat.mid  { background:#7c2d12; } .stat.mid  b { color:#fff7ed; }
   section { padding:24px 36px; }
   section + section { border-top:1px solid var(--line); }
   h2 { font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 14px;
@@ -67,7 +82,9 @@
   .slots span { display:inline-block; white-space:nowrap; background:#eef2ff; border:1px solid #dbe3ff; color:#3b50c0;
           border-radius:7px; padding:3px 8px; margin:2px 3px 2px 0; font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums; }
   .tasks span.task { white-space:normal; background:#f3e8ff; border-color:#e9d5ff; color:#7e22ce; }
-  .onbreak { color:var(--muted); font-style:italic; }
+.onbreak { color:var(--muted); font-style:italic; }
+.training-pill { display:inline-block; white-space:nowrap; background:#fef3c7; border:1px solid #fde68a; color:#92400e; border-radius:7px; padding:3px 8px; font-size:11.5px; font-weight:700; }
+.gantt td.training { background:#fef3c7; color:#92400e; text-align:center; font-weight:700; }
   /* gantt timeline grid */
   .legend { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; font-size:12px; color:var(--muted); }
   .legend span { display:inline-flex; align-items:center; gap:6px; }
@@ -94,6 +111,81 @@
   .vbtn { background:#eef2f7; color:var(--muted); border-radius:9px 9px 0 0; padding:11px 18px; font-weight:700; text-decoration:none; display:inline-block; font-size:inherit; }
   .vbtn:hover { background:#e2e8f0; }
   .vbtn.active { background:#fff; color:var(--accent); box-shadow:inset 0 -3px 0 var(--accent); }
+  /* day bar: controls grouped by what they act on, so the strip reads as
+     three decisions (which day / this day / this week) instead of 11 buttons */
+  .ctlgroup { display:flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--line);
+        border-radius:11px; padding:5px 8px 5px 11px; flex-wrap:wrap; max-width:100%; }
+  .ctlgroup .ctllabel { font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+        font-weight:700; white-space:nowrap; margin-right:2px; }
+  .ctlgroup .ctlop { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .numin { width:96px; border:1px solid var(--line); border-radius:8px; padding:7px 9px; font:inherit; font-size:13px; }
+  .numin.sm { width:66px; }
+  .numin:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+  .vh { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  #budgetLine { width:100%; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #weekBar { display:flex; gap:6px; flex-wrap:wrap; width:100%; }
+  /* Off-screen twin of the printed page, used to measure real height before
+     printing. Same width and typography as the paper, so the measurement is the
+     thing itself rather than an estimate. */
+  #measure { position:fixed; left:-20000px; top:0; visibility:hidden; background:#fff; }
+  #measure .grid{font-size:var(--pgrid-fs);table-layout:fixed;line-height:var(--pgrid-lh);}
+  #measure .grid th,#measure .grid td{padding:var(--pgrid-pad);overflow:visible;white-space:normal;overflow-wrap:break-word;vertical-align:top;}
+  #measure .grid td.c,#measure .grid th.c{white-space:normal;}
+  body.printing-final #measure th.reqcol,body.printing-final #measure td.reqcol{display:none;}
+  body.printing-final #measure col.reqcol{display:none;}
+  #measure .tablescroll,#measure .gridscroll{overflow:visible!important;}
+  #measure .grid th{font-size:var(--pgrid-th-fs);}
+  #measure .slots{line-height:1.9;}
+  #measure .slots span{font-size:var(--pchip-fs);padding:var(--pchip-pad);margin:2px 3px 2px 0;}
+  #measure section{padding:14px 4px;}
+  /* Must mirror the compact print header exactly — measuring a taller header
+     than will actually print makes applyFit shrink the table more than needed. */
+  #measure header{padding:8px 14px;gap:10px;}
+  #measure header h1{font-size:15px;margin:1px 0 0;}
+  #measure header .eyebrow{font-size:9px;letter-spacing:.14em;}
+  #measure header input.date{font-size:11.5px;margin-top:3px;padding:1px 0;width:auto;}
+  #measure header .stats{margin-top:0;gap:6px;flex-shrink:0;}
+  #measure header input.date{display:none!important;}
+  #measure .print-only{display:block!important;font-size:12px;font-weight:600;margin-top:3px;color:#fff;}
+  #measure header .stat{padding:4px 9px;min-width:74px;flex-shrink:0;} #measure header .stat b{font-size:13px;}
+  #measure header .stat span{font-size:8.5px;letter-spacing:.05em;}
+  #measure .toolbar,#measure .daybar,#measure .viewnav,#measure .screen-only,
+  #measure #view-optimize,#measure .col-actions,#measure .stats.wk,#measure footer{display:none!important;}
+  .startpill { display:inline-block; white-space:nowrap; background:#ecfeff; border:1px solid #cffafe; color:#0e7490;
+        border-radius:99px; padding:1px 7px; font-size:10.5px; font-weight:700; vertical-align:baseline; }
+  #confirmLine:empty { display:none; }
+  #confirmLine { width:100%; font-size:11.5px; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
+        border-radius:10px; padding:8px 12px; font-weight:600; }
+  #confirmLine b { color:#7c2d12; }
+  .newpill { display:inline-block; white-space:nowrap; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412;
+        border-radius:99px; padding:1px 7px; font-size:10.5px; font-weight:700; cursor:pointer; vertical-align:baseline; }
+  .newpill:hover { background:#ffedd5; }
+  .reqcell { white-space:nowrap; }
+  .reqin { width:104px; border:1px solid var(--line); border-radius:7px; padding:5px 7px; font:inherit; font-size:12.5px; }
+  .reqin:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+  .btn-ok { background:#ecfdf5; color:var(--teal); border:1px solid #a7f3d0; padding:4px 8px; font-size:13px; line-height:1; border-radius:7px; }
+  .btn-ok:hover { background:#d1fae5; }
+  .reqbad { color:var(--danger); font-weight:700; padding:0 6px; }
+  .reqdone { font-size:11.5px; font-weight:700; }
+  .reqdone.ok { color:var(--teal); } .reqdone.no { color:var(--muted); }
+  .print-only { display:none; }
+  .result-panel[hidden] { display:none; }
+  .result-panel { background:var(--band); }
+  .result-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+  .result-head h2 { margin:0 0 4px; color:var(--ink); font-size:14px; }
+  .result-time { color:var(--muted); font-size:11.5px; }
+  .result-actions { display:flex; gap:6px; }
+  .result-groups { display:grid; gap:10px; }
+  .result-group { border-left:4px solid var(--accent); border-radius:8px; padding:10px 14px; background:#fff; }
+  .result-group.ok { border-left-color:var(--teal); background:var(--teal-soft); }
+  .result-group.info { border-left-color:var(--accent); background:var(--accent-soft); }
+  .result-group.warn { border-left-color:var(--amber); background:var(--amber-soft); }
+  .result-group.danger { border-left-color:var(--danger); }
+  .result-label { font-size:12px; font-weight:700; margin-bottom:5px; }
+  .result-group ul { margin:0; padding-left:20px; font-size:13px; line-height:1.55; }
+  .day-chip { padding:2px 7px; margin-right:3px; border:1px solid var(--line); background:#fff; color:var(--accent);
+        border-radius:99px; font-size:11.5px; font-weight:700; vertical-align:baseline; }
+  .day-chip:hover { background:var(--accent-soft); }
   .gridscroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
   .gantt { border-collapse:separate; border-spacing:0; font-size:11px; width:100%; }
   .gantt th, .gantt td { border:0; border-bottom:1px solid #eef1f5; border-right:1px solid #eef1f5; padding:0; }
@@ -139,6 +231,10 @@
     header{padding:22px 18px;} section{padding:18px 16px;}
     .toolbar{padding:0 16px 18px;} footer{padding:16px 18px 22px;}
     th,td{padding:8px 8px;}
+    /* the day bar's 36px side padding plus three fixed-width clusters overflows
+       a 390px viewport and .page clips it */
+    .daybar{padding:12px 14px;} .ctlgroup{flex:1 1 100%;}
+    .stats.wk{padding-left:0; border-left:0; border-top:1px solid rgba(255,255,255,.25); padding-top:10px; margin-top:2px;}
   }
   /* ---- decluttered look ---- */
   .toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -155,21 +251,78 @@
   .daybar { row-gap:10px; }
   @media print {
     body{background:#fff;padding:0;} .page{box-shadow:none;border-radius:0;max-width:none;}
-    header{padding:14px 20px;} header h1{font-size:19px;} header .stats{margin-top:10px;}
-    section{padding:10px 16px;}
-    .grid{font-size:10px;table-layout:fixed;} .grid th,.grid td{padding:4px 6px;overflow:hidden;}
-    .slots span{font-size:9.5px;padding:2px 6px;margin:1px 2px 1px 0;}
+    /* A printed day sheet needs the date and the headline numbers, not a hero
+       banner. Trimming this is worth ~55px, which is the difference between
+       shrinking the table to 79% and leaving it near full size. */
+    header{padding:8px 14px;gap:10px;} header h1{font-size:15px;margin:1px 0 0;}
+    header .eyebrow{font-size:9px;letter-spacing:.14em;}
+    header input.date{font-size:11.5px;margin-top:3px;padding:1px 0;width:auto;}
+    header .stats{margin-top:0;gap:6px;flex-shrink:0;}
+    /* min-width:0 here let flex collapse the tiles to zero width and they
+       vanished from the printout entirely. They need a floor. */
+    header .stat{padding:4px 9px;min-width:74px;flex-shrink:0;} header .stat b{font-size:13px;}
+    header .stat span{font-size:8.5px;letter-spacing:.05em;}
+    /* The date lives in an <input>, which does not print reliably. Print a real
+       text node instead — a schedule with no date on it is useless. */
+    header input.date{display:none!important;}
+    .print-only{display:block!important;font-size:12px;font-weight:600;margin-top:3px;color:#fff;}
+    section{padding:14px 4px;}   /* the @page margin already provides the outer gutter */
+    /* Type and spacing. 10px set solid with 4px padding read as a wall; the real
+       bug was `overflow:hidden` on a fixed layout, which silently CLIPPED long
+       names and notes instead of wrapping them. */
+    .grid{font-size:var(--pgrid-fs);table-layout:fixed;line-height:var(--pgrid-lh);}
+    .grid th,.grid td{padding:var(--pgrid-pad);overflow:visible;white-space:normal;overflow-wrap:break-word;vertical-align:top;}
+    .grid th{font-size:var(--pgrid-th-fs);letter-spacing:.05em;padding-top:6px;padding-bottom:6px;
+        overflow-wrap:normal;word-break:normal;}
+    /* Centred cells are nowrap on screen, which on paper made "8:45–9:45 AM"
+       run straight over the next column instead of wrapping. */
+    .grid td.c,.grid th.c{white-space:normal;}
+    .tablescroll,.gridscroll{overflow:visible!important;}   /* no scrollbar stub on paper */
+    .note::placeholder{color:transparent;}                  /* don't print "e.g. called in..." */
+    .note{padding:0;background:transparent!important;}   /* white input band over zebra rows */
+    /* Shrink-to-fit: applyFit() measures the real thing off-screen and sets
+       --print-scale so one day never spills onto a second sheet.
+       `zoom`, NOT `transform:scale()` — a transform shrinks only the painting
+       and the element keeps its full-size layout box, so the page still
+       paginates as if nothing had been scaled. zoom shrinks the layout box,
+       which is what the page breaker actually reads. */
+    .page,#weekPrint .daypage{zoom:var(--print-scale,1);padding:11mm;}
+    .grid thead{display:table-header-group;}      /* repeat the header on every page */
+    .grid thead th{position:static;}               /* sticky belongs to the screen */
+    /* Zebra rows survive to paper — the single biggest readability win on a
+       ten-column table. */
+    .grid tbody tr:nth-child(even) td{background:#f4f6f9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .grid tbody tr:hover td{background:inherit;}
+    .slots{line-height:1.9;}
+    .slots span{font-size:var(--pchip-fs);padding:var(--pchip-pad);margin:2px 3px 2px 0;}
+    .tasks span.task{margin:2px 3px 2px 0;}
     .grid tr{break-inside:avoid;}
+    .stats.wk{display:none!important;}             /* week tiles don't belong on a day sheet */
+    /* Draft sheet: a box to hand-write the requested time in, and an
+       unmistakable stamp so a draft is never mistaken for the posted week.
+       Neither appears on the final print. */
+    /* The write-in box is on every ordinary print — a sheet you hand out is a
+       working copy by definition. Only an explicit FINAL print drops it. */
+    body.printing-final th.reqcol,body.printing-final td.reqcol{display:none;}
+    body.printing-final col.reqcol{display:none;}           /* a <col> is not a cell */
+    .draftstamp{display:inline-block;}
+    body.printing-final .draftstamp{display:none;}
+    .draftstamp{background:#b91c1c;color:#fff;border-radius:6px;padding:2px 10px;
+        font-size:11px;font-weight:800;letter-spacing:.12em;margin-left:10px;vertical-align:middle;}
+    .reqbox{border-bottom:1px solid #94a3b8;display:inline-block;min-width:34px;}
     .note{border:0!important;padding:0!important;box-shadow:none!important;font-size:10px;}
     .toolbar,.btn-x,.col-actions,.screen-only,footer,.daybar,.viewnav,#view-optimize{display:none!important;}
     #view-schedule{display:block!important;}   /* always print the schedule, whatever view is open */
     /* whole-week print: hide live page, show stacked day pages */
     body.printing-week .page{display:none!important;}
     body.printing-week #weekPrint{display:block!important;}
-    #weekPrint .daypage{break-after:page;padding:0;}
+    #weekPrint .daypage{break-after:page;}
     #weekPrint .daypage:last-child{break-after:auto;}
-    #weekPrint .grid{font-size:10px;} #weekPrint .grid th,#weekPrint .grid td{padding:4px 6px;}
+    #weekPrint .grid{font-size:11px;line-height:1.45;} #weekPrint .grid th,#weekPrint .grid td{padding:7px 8px;}
+    #weekPrint .grid tbody tr:nth-child(even) td{background:#f4f6f9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     #weekPrint .grid tr{break-inside:avoid;}
+    #weekPrint .daypage + .daypage{padding-top:0;}
+    #weekPrint .phead{padding:12px 16px;margin-bottom:10px;}
     #weekPrint .note{border:0!important;padding:0!important;font-size:10px;}
     .edit input{border:0!important;background:transparent!important;box-shadow:none!important;}
     header input.date{background:transparent;border:0;}
@@ -180,28 +333,47 @@
     .gantt td.cell,.gantt td.off,.gantt td.work,.gantt td.brk,.gantt td.lunch,.gantt td.disp{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
 </style>
-<style id="pageOrient">@page{size:portrait;margin:8mm;}</style>
+<style id="pageOrient">@page{size:portrait;margin:0;}</style>
 </head>
 <body>
 <div class="page">
   <header>
     <div class="hgroup">
       <div class="eyebrow">Daily Schedule Report</div>
-      <h1>Shift &amp; Dispensing Dashboard</h1>
+      <h1>Shift &amp; Dispensing Dashboard<span class="draftstamp">DRAFT — WRITE YOUR TIME</span></h1>
       <input class="date" id="reportDate" placeholder="Report date / workgroup">
+      <div class="print-only" id="reportDatePrint"></div>
     </div>
     <div class="stats" id="stats"></div>
+    <div class="stats wk" id="weekStats"></div>
   </header>
 
   <div class="daybar">
-    <label for="daySel">Day</label>
-    <select id="daySel"></select>
-    <button class="btn-ghost" id="newDay">+ New day</button>
-    <button class="btn-ghost" id="dupDay">Duplicate</button>
-    <button class="btn-x" id="delDay" title="Delete this day">🗑</button>
-    <label for="demandHrs" style="margin-left:10px">Demand hrs</label>
-    <input id="demandHrs" style="width:84px;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit" placeholder="89.5">
-    <div id="weekBar" style="display:flex;gap:6px;flex-wrap:wrap;width:100%"></div>
+    <div class="ctlgroup">
+      <label class="ctllabel" for="daySel">Day</label>
+      <select id="daySel"></select>
+      <button class="btn-ghost" id="newDay" title="Add a blank day">+ New</button>
+      <button class="btn-ghost" id="dupDay" title="Copy this day">Duplicate</button>
+      <button class="btn-x" id="delDay" title="Delete this day">🗑</button>
+    </div>
+    <div class="ctlgroup">
+      <span class="ctllabel">This day</span>
+      <label class="vh" for="demandHrs">Demand hours for this day</label>
+      <input id="demandHrs" class="numin" placeholder="Demand hrs" title="Demand hours for this day, from the Schedule Editor">
+    </div>
+    <div class="ctlgroup">
+      <span class="ctllabel">This week</span>
+      <label class="vh" for="budgetHrs">Week hours budget</label>
+      <input id="budgetHrs" class="numin" placeholder="Budget hrs" title="Total paid hours this Saturday–Friday week is allowed to reach">
+      <span class="ctlop">= now +</span>
+      <label class="vh" for="addHrs">Extra hours on top of what is scheduled now</label>
+      <input id="addHrs" class="numin sm" placeholder="extra" title="Set the budget to whatever is scheduled right now, plus this many hours">
+      <button class="btn-ghost" id="applyExtra" title="Budget = hours scheduled right now + extra">Apply</button>
+      <button class="btn-x" id="clearBudget" title="Clear the budget and go back to demand + 25h per day">✕</button>
+    </div>
+    <div id="confirmLine"></div>
+    <div id="budgetLine"></div>
+    <div id="weekBar"></div>
   </div>
 
   <nav class="viewnav">
@@ -209,11 +381,19 @@
     <button class="vbtn" data-view="optimize">🎯 Optimizer</button>
   </nav>
 
+  <section id="resultPanel" class="screen-only result-panel" hidden>
+    <div class="result-head">
+      <div><h2 id="resultTitle"></h2><div class="result-time" id="resultTime"></div></div>
+      <div class="result-actions"><button class="btn-ghost" id="copyReport">Copy</button><button class="btn-x" id="dismissReport" title="Dismiss report">✕</button></div>
+    </div>
+    <div class="result-groups" id="resultGroups"></div>
+  </section>
+
   <div id="view-schedule">
   <section class="screen-only">
     <h2><span class="ico">✏️</span>Shifts <span class="empty" style="font-weight:400;text-transform:none;letter-spacing:0">— click any cell to edit</span></h2>
     <table>
-      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="c">DM</th><th class="c" title="Must stay in the morning">☀ AM</th><th class="col-actions"></th></tr></thead>
+      <thead><tr><th>Associate</th><th>Start</th><th>End</th><th class="c">DM</th><th class="c" title="Must stay in the morning">☀ AM</th><th class="c" title="Closed yesterday — can't open today">🌙</th><th title="What they wrote on the draft sheet — just the time, e.g. 4-12:30">✍ Change request</th><th class="col-actions"></th></tr></thead>
       <tbody id="editBody"></tbody>
     </table>
   </section>
@@ -226,6 +406,10 @@
     <button class="btn-ghost" onclick="printAs('portrait')">Print day ↧</button>
     <button class="btn-ghost" onclick="printAs('landscape')">Print day ↦</button>
     <button class="btn-primary" onclick="printWeek('landscape')">Print week</button>
+      <span style="width:1px;height:22px;background:var(--line);margin:0 4px"></span>
+      <button class="btn-ghost" onclick="printAs('portrait', true)" title="Clean sheet to post — no write-in box, no DRAFT stamp">✓ Final day</button>
+      <button class="btn-ghost" onclick="printWeek('landscape', true)" title="Clean week to post — no write-in box, no DRAFT stamp">✓ Final week</button>
+      <button class="btn-ghost" id="reqReportBtn" title="Every change request and what you decided">✍ Change requests</button>
     <span style="width:1px;height:22px;background:var(--line)"></span>
     <button class="btn-ghost dim" id="exportBtn" title="Download all days as a file">⬇ Backup</button>
     <button class="btn-ghost dim" id="importBtn" title="Load days from a backup file">⬆ Restore</button>
@@ -237,13 +421,16 @@
     <h2><span class="ico">📋</span>Shifts, breaks &amp; dispensing</h2>
     <div class="tablescroll"><table class="grid">
     <colgroup>
-      <col style="width:11%"><col style="width:6%"><col style="width:6%"><col style="width:4%">
-      <col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:14%"><col style="width:19%">
+      <!-- Must stay in step with GRID_HEAD, which the week print and the
+           optimizer preview use. Associate needs 15%: "GURSHARANDEEP.S 9488"
+           does not fit in 11%. -->
+      <col style="width:15%"><col style="width:7%"><col style="width:7%"><col style="width:5%">
+      <col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:11%"><col style="width:10%"><col style="width:18%"><col class="reqcol" style="width:13%">
     </colgroup>
     <thead><tr>
       <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
       <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
-      <th>Dispensing</th><th>Tasks</th><th>Notes</th>
+      <th>Dispensing</th><th>Tasks</th><th>Notes</th><th class="reqcol">Time you need</th>
     </tr></thead>
     <tbody id="shiftBody"></tbody></table></div>
   </section>
@@ -260,7 +447,7 @@
     <div class="gridscroll"><table class="gantt" id="gantt"></table></div>
   </section>
 
-  <footer>Round-robin, earliest clock-in first — everyone dispenses once per day before anyone repeats.
+  <footer>Round-robin, earliest clock-in first — every dispense-trained associate takes one hour per day, and nobody repeats. ALLIE.P and HARMANPREET.K are not dispense-trained and are skipped.
   A repeat only happens late when no one left on the floor has an unused turn. Sub-hour starts round up to the next whole hour. Changes save to this browser.</footer>
   </div><!-- /view-schedule -->
 
@@ -276,19 +463,21 @@
     </div>
     <div class="gridscroll"><table class="cov" id="cov"></table></div>
     <div class="optbar" style="margin-top:16px">
-      <button class="btn-primary" id="weekBtn" style="background:linear-gradient(135deg,#7c3aed,#2563eb)" title="Balances part-timer hours, then optimizes every day in order. One Undo restores the whole week.">⚡ Do the whole week</button>
+      <button class="btn-primary" id="weekBtn" style="background:linear-gradient(135deg,#7c3aed,#2563eb)" title="Fills sparse coverage, balances part-timer hours per week, then optimizes every loaded day. One Undo restores everything.">⚡ Do all loaded weeks</button>
+      <button class="btn-primary" id="fillBtn" style="background:linear-gradient(135deg,#059669,#047857)" title="Add available, unscheduled associates where operational floor coverage is below four">➕ Fill sparse coverage</button>
       <button class="btn-primary" id="optBtn" title="Re-time this day's shifts to hit the clock-in targets">⚙ Optimize this day</button>
-      <button class="btn-ghost" id="balanceBtn" title="Extend/trim part-timers so each day reaches demand+10h (PT shifts 6–7½h, ≤30h/week). Full-timers never change.">⚖ Balance hours</button>
+      <button class="btn-primary" id="fillBudgetBtn" style="background:linear-gradient(135deg,#b45309,#d97706)" title="Add NEW shifts until each week reaches its hours budget — neediest day first, Sat/Sun/Mon/Tue/Fri before Wed/Thu">＋ Fill to budget</button>
+      <button class="btn-ghost" id="balanceBtn">⚖ Balance hours</button>
       <button class="btn-ghost" id="undoOpt" style="display:none">↩ Undo</button>
       <button class="btn-ghost" id="saveBtn2">Save</button>
     </div>
-    <p class="rulehint">☀ morning = start before noon &nbsp;·&nbsp; DM ≥ 7 AM, rotating open / mid / close &nbsp;·&nbsp; 🌙 closers rest until 9 AM &nbsp;·&nbsp; clock-ins ≤ 1½ h apart (under 13 in: spread ≥ 1½ h after 5 AM) &nbsp;·&nbsp; availability always wins</p>
+    <p class="rulehint">☀ morning = start before noon &nbsp;·&nbsp; DM ≥ 7 AM, rotating open / mid / close &nbsp;·&nbsp; at least 8h between shifts (closers still rest until 9 AM) &nbsp;·&nbsp; clock-ins ≤ 1½ h apart &nbsp;·&nbsp; 🕙 ALLIE.P and HARMANPREET.K work mid shifts only (7 AM–8 PM) &nbsp;·&nbsp; 🕓 standing clock-ins: ANGELA &amp; OLITHEA 4 AM, DAWN 4–6 AM, CHRISTINA 5–6 AM, MADISON from 2 PM &nbsp;·&nbsp; availability always wins</p>
     <details class="acc" open>
       <summary>🔒 Per-associate rules & availability</summary>
       <div class="tablescroll"><table class="grid" id="flags" style="max-width:680px"></table></div>
     </details>
     <details class="acc">
-      <summary>📊 Week hours — part-timers capped at 30h</summary>
+      <summary>📊 Week hours — full-time and part-time both capped at 37.5h</summary>
       <div class="tablescroll"><table class="grid" id="weekHours"></table></div>
     </details>
   </section>
@@ -319,7 +508,6 @@ const DEFAULTS = {
     { name:"HAYDEN.S 4020",        start:"1:30pm",  end:"10:00pm" },
     { name:"COLIN.F 6428",         start:"2:00pm",  end:"8:30pm"  },
     { name:"TIFFANY.E 4918",       start:"2:00pm",  end:"8:30pm"  },
-    { name:"BENUDHAR.P 3098",      start:"10:00am", end:"6:30pm", dm:true },
     { name:"CHEYANNE.H 3503",      start:"12:00pm", end:"8:30pm", dm:true },
   ]
 };
@@ -372,7 +560,6 @@ const SEED_DAYS = [
     { name:"COLIN.F 6428", start:"3:00pm", end:"10:00pm" },
     { name:"RINKU.R 1853", start:"3:30pm", end:"8:30pm" },
     { name:"TRISHA.T 2786", start:"4:00pm", end:"10:00pm" },
-    { name:"BENUDHAR.P 3098", start:"10:00am", end:"6:30pm", dm:true },
   ]},
   { date:"Thursday, 2 July 2026 · OMNI FOM", shifts:[
     { name:"ANNIKA.N 2226", start:"4:00am", end:"12:30pm" },
@@ -389,7 +576,6 @@ const SEED_DAYS = [
     { name:"HAYDEN.S 4020", start:"3:15pm", end:"9:00pm" },
     { name:"HANY.W 0757", start:"3:30pm", end:"10:00pm" },
     { name:"ROBBIN.E 3659", start:"5:00pm", end:"10:00pm" },
-    { name:"BENUDHAR.P 3098", start:"8:00am", end:"4:30pm", dm:true },
     { name:"SAVANNAH.H 0889", start:"1:30pm", end:"10:00pm", dm:true },
   ]},
   { date:"Friday, 3 July 2026 · OMNI FOM", shifts:[
@@ -409,7 +595,6 @@ const SEED_DAYS = [
     { name:"TRISHA.T 2786", start:"2:45pm", end:"10:00pm" },
     { name:"ROBBIN.E 3659", start:"5:00pm", end:"10:00pm" },
     { name:"CHEYANNE.H 3503", start:"7:00am", end:"3:30pm", dm:true },
-    { name:"BENUDHAR.P 3098", start:"10:30am", end:"7:00pm", dm:true },
     { name:"SAVANNAH.H 0889", start:"1:30pm", end:"10:00pm", dm:true },
   ]},
   { date:"Saturday, 18 July 2026 · OMNI FOM", shifts:[
@@ -463,6 +648,29 @@ function save(){
   const m = document.getElementById("savedMsg"); m.classList.add("show");
   setTimeout(()=>m.classList.remove("show"), 1500);
 }
+function report(title, groups, opts={}){
+  const panel=document.getElementById("resultPanel"), stamp=new Date().toLocaleString();
+  const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const tones=new Set(["ok","info","warn","danger"]);
+  const usable=(groups||[]).map(g=>({
+    label:g.label||"Result", tone:tones.has(g.tone)?g.tone:"info",
+    items:(Array.isArray(g.items)?g.items:[g.items]).filter(x=>x!=null&&String(x).trim())
+  })).filter(g=>g.items.length);
+  const itemHTML=item=>{
+    const text=String(item), m=text.match(/^(Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday|Friday)\b/);
+    const di=m ? state.days.findIndex(d=>String(d.date||"").startsWith(m[1])) : -1;
+    const lead=di>=0 ? `<button class="day-chip" data-report-day="${di}">${m[1]}</button>` : (m?esc(m[1]):"");
+    return lead+esc(m?text.slice(m[1].length):text).replace(/\n/g,"<br>");
+  };
+  document.getElementById("resultTitle").textContent=title;
+  document.getElementById("resultTime").textContent=stamp;
+  document.getElementById("resultGroups").innerHTML=usable.map(g=>
+    `<div class="result-group ${g.tone}"><div class="result-label">${esc(g.label)}</div><ul>${g.items.map(x=>`<li>${itemHTML(x)}</li>`).join("")}</ul></div>`
+  ).join("");
+  panel._reportText=[title,stamp,...usable.flatMap(g=>["",g.label,...g.items.map(x=>"- "+x)])].join("\n");
+  panel.hidden=false;
+  if(opts.scroll!==false) panel.scrollIntoView({behavior:"smooth",block:"start"});
+}
 
 function parseTime(s){
   s = String(s).trim().toLowerCase().replace(/\s+/g,"");
@@ -495,15 +703,14 @@ const AVAIL = {
   "8836":{Sat:[7,22],Sun:[7,22],Mon:[8,22],Tue:[8,22],Wed:[8,22],Thu:[8,22],Fri:[8,22]},        // SCHWARTZ, KEITH
   "3659":{Sat:[5,22],Sun:[5,22],Mon:null,Tue:[4,9],Wed:null,Thu:[17,22],Fri:[17,22]},           // EBBY PALATTY, ROBBIN
   "0757":{Sat:[7,22],Sun:[7,22],Mon:[7,22],Tue:[7,22],Wed:[7,22],Thu:[7,22],Fri:[7,22]},        // WARSON, HANY
-  "0889":{Sat:[9,22],Sun:[9,22],Mon:[9,22],Tue:[9,22],Wed:null,Thu:null,Fri:[9,22]},            // HOGAN HUSLER, SAVANNAH (DM)
+  "0889":{Sat:null,Sun:null,Mon:[5,14],Tue:[5,14],Wed:[5,14],Thu:[5,14],Fri:[5,14]},            // HOGAN HUSLER, SAVANNAH (DM) — weekday online training
   "3450":{Sat:[4,22],Sun:null,Mon:[8,16.5],Tue:[8,16.5],Wed:[8,16.5],Thu:[8,16.5],Fri:[8,16.5]},// JOSHI, ANJALI
   "6428":{Sat:[5,22],Sun:[5,22],Mon:null,Tue:null,Wed:[5,22],Thu:null,Fri:null},                // FLORES, COLIN
   "8609":{Sat:[6,22],Sun:[6,22],Mon:[8,15.5],Tue:null,Wed:[8,15.5],Thu:[8,15.5],Fri:null},      // MERRIMAN, CHRISTINA
   "4020":{Sat:[6,22],Sun:[6,22],Mon:[6,22],Tue:[6,22],Wed:[6,22],Thu:[6,22],Fri:[6,22]},        // SIEMINSKI, HAYDEN
   "2786":{Sat:[16,22],Sun:null,Mon:[7,22],Tue:[7,22],Wed:[16,22],Thu:[16,22],Fri:[16,22]},      // TAK, TRISHA
   "5650":{Sat:null,Sun:null,Mon:[4,14],Tue:[4,14],Wed:[4,14],Thu:[4,14],Fri:[4,14]},            // JENKINS, ANGELA
-  "2226":{Sat:[7,22],Sun:null,Mon:[4,14],Tue:[4,14],Wed:null,Thu:[4,14],Fri:[7,10]},            // NOEL, ANNIKA
-  "3098":{Sat:[9,19],Sun:[9,19],Mon:[8,21],Tue:[8,21],Wed:[8,21],Thu:[8,21],Fri:[8,21]},        // PATRA, BENUDHAR (DM)
+  "2226":{Sat:[4,22],Sun:[4,22],Mon:[15.5,22],Tue:[15,22],Wed:[15.5,22],Thu:[15,22],Fri:[15.5,22]},  // NOEL, ANNIKA — from Associate Profile 2026-08-15
   "1853":{Sat:null,Sun:[15,22],Mon:[7,14.75],Tue:[15.5,22],Wed:[15.5,22],Thu:[7,14.75],Fri:[7,14.75]}, // RINKU (Mon "2:45 am" read as 2:45 pm)
   "1787":{Sat:null,Sun:[8,18],Mon:[8,18],Tue:null,Wed:[9,22],Thu:[8,18],Fri:[8,18]},            // ROBINSON, CAITLYN
   "9488":{Sat:[8,16],Sun:[8,16],Mon:[6,15],Tue:null,Wed:[8,22],Thu:[6,22],Fri:[6,15]},          // SINGH, GURSHARANDEEP
@@ -518,25 +725,122 @@ function availFor(name, dateStr){
   return rec ? rec[wd] : undefined;   // [start,end] | null (off that day) | undefined (no data)
 }
 
-/* ---- Weekly hours: demand buffer + part-timer 30h cap ---- */
-const WEEK_BUFFER = 10, PT_MAX_HOURS = 30, PT_SHIFT_MIN = 6, PT_SHIFT_MAX = 7.5;  // PT shifts only adjusted within 6-7.5h
-const PART_TIME = new Set(["7047","6547","1256","8836","3659","0757","3450","8609","4020","2786","1853","9488","6428"]);  // ANNIKA 2226 = FT; TASHA 8506 left the team
+/* ---- Weekly hours: demand buffer + FT 37.5h / PT 37.5h caps ---- */
+// Buffer 25 lands the week on demand+175 = 701.5h for the 29 Aug 2026 demand
+// curve (526.5h), the ~700h target. PT max is 37.5h so part-timers can be
+// pushed to a full week; that needs 8.5h spans, because a 7.5h span is only
+// 6.5h paid and five of those top out at 32.5h.
+const WEEK_BUFFER = 25, FT_MAX_HOURS = 37.5, PT_MAX_HOURS = 37.5, PT_SHIFT_MIN = 6, PT_SHIFT_MAX = 8.5;  // PT shifts only adjusted within 6-8.5h
+const PART_TIME = new Set(["7047","6547","1256","8836","3450","8609","4020","2786","1853","9488","6428"]);  // ANNIKA 2226 = FT; departed staff live in EXCLUDED, not here
 // Standing morning rule: these associates are always placed to start before noon
-// (ANGELA 5650, OLITHEA 7355, GABRIELLE 9750, CAITLYN 1787, ANJALI 3450, ANNIKA 2226)
-const MORNING = new Set(["5650","7355","9750","1787","3450","2226"]);
+// (ANGELA 5650, OLITHEA 7355, GABRIELLE 9750, CAITLYN 1787, ANJALI 3450)
+// ANNIKA 2226 was in this set, but her availability starts 3:00/3:30 PM Mon-Fri,
+// so "start before noon" is unsatisfiable on five days out of seven and she is
+// scheduled afternoons at weekends too. Kept out rather than generating a
+// standing violation she can never clear.
+const MORNING = new Set(["5650","7355","9750","1787","3450"]);
+// Not trained to dispense — they still count as floor coverage and still get
+// breaks and tasks, they are just never given a dispensing hour.
+const NO_DISPENSE = new Set(["4990", "2088"]);   // ALLIE.P and HARMANPREET.K — new, untrained
 // People no longer with the team — stripped from every import and saved day
-const EXCLUDED = new Set(["8506"]);   // TASHA left 2026-07
+const EXCLUDED = new Set(["8506", "3098", "3659", "0757"]);   // TASHA left 2026-07; BEN left 2026-08; ROBBIN.E and HANY.W resigned 2026-08
 const idOf = n => { const m = String(n||"").match(/(\d{4,})\s*$/); return m ? m[1].slice(-4) : null; };
+// Also clean departed associates from an already-loaded local schedule. This
+// makes the resignation take effect without requiring a fresh PDF import.
+let removedExcluded = false;
+state.days.forEach(d=>{
+  const kept = d.shifts.filter(s=>!EXCLUDED.has(idOf(s.name)||""));
+  if(kept.length !== d.shifts.length){ d.shifts = kept; removedExcluded = true; }
+});
+if(removedExcluded) localStorage.setItem(KEY, JSON.stringify(state));
 const isPT = n => PART_TIME.has(idOf(n)||"");
-const paidLenH = (a,b) => { const L=b-a; return L>0 ? L-(L>=6?1:0) : 0; };   // lunch unpaid on 6h+
+// Unpaid meal by shift span, matching the Schedule Editor exactly (checked
+// against all 96 shifts in the 29 Aug 2026 export): none under 5h, 30 min from
+// 5h, 60 min from 7h. The old flat "1h on 6h+" over-deducted every 5-7h shift.
+const paidLenH = (a,b) => { const L=b-a; return L>0 ? L-(L>=7?1:(L>=5?0.5:0)) : 0; };
 const paidLen = s => { const a=parseTime(s.start), b=parseTime(s.end);
   return (a==null||b==null) ? 0 : paidLenH(a,b); };
 const dayHours = d => Math.round(d.shifts.reduce((t,s)=>t+paidLen(s),0)*4)/4;
-function weekTotals(){ const m={}; state.days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id) m[id]=(m[id]||0)+paidLen(s); })); return m; }
+// A loaded schedule can contain multiple consecutive weeks. Each Saturday
+// starts a new payroll week so PT caps and week totals never bleed across it.
+function weekGroups(){
+  const groups=[];
+  state.days.forEach(d=>{
+    if(!groups.length || (weekdayOf(d.date)==="Sat" && groups[groups.length-1].length)) groups.push([]);
+    groups[groups.length-1].push(d);
+  });
+  return groups;
+}
+function weekTotals(days=state.days){ const m={}; days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id) m[id]=(m[id]||0)+paidLen(s); })); return m; }
+/* ---- Week hours budget ----
+   Each Saturday-Friday week carries its OWN budget, stored as `weekBudget` on
+   that week's day objects — two loaded weeks have different demand and are
+   allowed different totals. A budget replaces the flat WEEK_BUFFER for that
+   week: the hours above demand are spread across its days by priority weight,
+   so the busy days soak up the budget before Wednesday and Thursday do.
+   state.budgetHours is the older single-value form, still honoured as a
+   fallback so saved schedules keep working. */
+// The budget rides on the day objects themselves, not a map keyed by date text.
+// Keying by days[0].date orphaned the budget the moment a day was renamed or
+// deleted; writing it to every day in the group survives both, and survives the
+// week being re-split when a Saturday is added.
+const weekKey = days => (days && days[0] && days[0].date) || "week";
+const budgetOf = days => {
+  for(const d of days||[]) if(Number.isFinite(d.weekBudget)) return d.weekBudget;
+  return Number.isFinite(state.budgetHours) ? state.budgetHours : null;   // legacy single value
+};
+function setBudgetFor(days, v){
+  (days||[]).forEach(d=>{ if(v==null) delete d.weekBudget; else d.weekBudget=v; });
+  migrateLegacyBudget(days);
+}
+// Freeze the old single budget onto every OTHER week before dropping it, so
+// editing one week never silently clears the rest.
+function migrateLegacyBudget(except){
+  if(!Number.isFinite(state.budgetHours)) return;
+  const legacy=state.budgetHours, skip=except&&except[0];   // weekGroups() rebuilds arrays, so compare by day identity
+  weekGroups().forEach(g=>{ if((skip&&g.includes(skip)) || g.some(d=>Number.isFinite(d.weekBudget))) return;
+    g.forEach(d=>d.weekBudget=legacy); });
+  delete state.budgetHours;
+}
+const activeWeek = () => { const g=weekGroups(); return g.find(x=>x.includes(cur())) || g[0] || []; };
+// "week of 29 Aug" style label, for messages that now have to say WHICH week
+const weekLabel = days => { const d=(days&&days[0]&&days[0].date)||""; const m=d.match(/,\s*([^·]+)/);
+  return m ? "Week of "+m[1].trim() : "This week"; };
+const DAY_PRIORITY = { Sat:1, Sun:1, Mon:1, Tue:1, Fri:1, Wed:0.5, Thu:0.5 };
+const priorityOf = d => DAY_PRIORITY[weekdayOf(d.date)] ?? 1;
+const weekDemand = days => days.reduce((t,d)=>t+(d.demandHours!=null?d.demandHours:0), 0);
+const weekHours  = days => Math.round(days.reduce((t,d)=>t+dayHours(d),0)*4)/4;
+// The budget only governs days that carry a demand figure. A day with no demand
+// (e.g. a hand-added "New day") is neither given a target nor counted against
+// the budget — counting its hours but never targeting it would silently eat the
+// allowance and leave the real days under-filled.
+const budgetDays  = days => days.filter(d=>d.demandHours!=null);
+const budgetSpent = days => weekHours(budgetDays(days));
+// Per-day hour target for one week group. Falls back to demand+WEEK_BUFFER when
+// no budget is set. `extra` lets the spill pass top up days that had room left.
+function dayTargets(days, extra){
+  const paid = days.filter(d=>d.demandHours!=null);
+  const out = new Map();
+  const B = budgetOf(days);
+  if(B==null){ paid.forEach(d=>out.set(d, d.demandHours+WEEK_BUFFER)); return out; }
+  const surplus = B - weekDemand(paid);
+  const wsum = paid.reduce((t,d)=>t+priorityOf(d), 0) || 1;
+  paid.forEach(d=>{
+    const share = surplus * priorityOf(d) / wsum + ((extra && extra.get(d)) || 0);
+    out.set(d, Math.max(d.demandHours, d.demandHours + share));   // never target below demand
+  });
+  return out;
+}
+function projectedWeekTotals(days){
+  const visible=weekTotals(days), external=days.find(d=>d.externalHours)?.externalHours||{}, out={...visible};
+  Object.entries(external).forEach(([id,h])=>out[id]=(out[id]||0)+(+h||0));
+  return out;
+}
 function extendStep(s, d){          // smallest 30-min step that ADDS paid time (lunch kicks in at 6h)
   const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return 0;
   const av = availFor(s.name, d.date); if(av===null) return 0;
-  const maxEnd = Math.min(CLOSE, av ? av[1] : CLOSE);
+  // Mid-shift people must not be extended into the closing stretch.
+  const maxEnd = Math.min(CLOSE, av ? av[1] : CLOSE, isMid(s.name) ? MID_END_MAX : CLOSE);
   for(const st of [0.5,1,1.5]){ if(b+st>maxEnd+1e-9 || (b+st)-a>PT_SHIFT_MAX+1e-9) return 0; if(paidLenH(a,b+st)>paidLenH(a,b)) return st; }
   return 0;
 }
@@ -551,57 +855,369 @@ function balanceCore(notes){
     const a=parseTime(s.start), b=parseTime(s.end);
     if(a!=null && b!=null && b-a>PT_SHIFT_MAX+1e-9) s.end=fmt(a+PT_SHIFT_MAX);
   }));
-  const tot = weekTotals();
-  Object.keys(tot).forEach(id=>{              // pass 1: enforce the PT weekly cap
-    if(!PART_TIME.has(id)) return;
-    let g=100;
-    while(tot[id]>PT_MAX_HOURS+1e-9 && g-->0){
-      let best=null;
-      state.days.forEach(d=>d.shifts.forEach(s=>{
-        if(idOf(s.name)!==id) return; const st=trimStep(s); if(!st) return;
-        const len=parseTime(s.end)-parseTime(s.start);
-        if(!best||len>best.len) best={s,st,len};
-      }));
-      if(!best) break;
-      const before=paidLen(best.s); best.s.end=fmt(parseTime(best.s.end)-best.st);
-      tot[id]+=paidLen(best.s)-before;
-    }
-  });
-  state.days.forEach(d=>{                     // pass 2: land each day on demand+buffer, PTs only
-    if(d.demandHours==null) return;
-    const target=d.demandHours+WEEK_BUFFER;
-    let g=400;
-    while(g-->0){
-      const diff=target-dayHours(d);
-      if(Math.abs(diff)<0.25) break;
-      if(diff>0){
-        const cands=d.shifts.filter(s=>isPT(s.name))
-          .map(s=>({s,id:idOf(s.name),st:extendStep(s,d)}))
-          .filter(c=>c.st && (tot[c.id]||0)<=PT_MAX_HOURS-0.5+1e-9)
-          .sort((a,b)=>(tot[a.id]||0)-(tot[b.id]||0));
-        if(!cands.length){ notes.push(((d.date||"?").split(",")[0])+": "+diff.toFixed(2)+"h short — no part-timer can extend"); break; }
-        const c=cands[0], before=paidLen(c.s);
-        c.s.end=fmt(parseTime(c.s.end)+c.st);
-        tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
-      } else {
-        const cands=d.shifts.filter(s=>isPT(s.name))
-          .map(s=>({s,id:idOf(s.name),st:trimStep(s)}))
-          .filter(c=>c.st)
-          .sort((a,b)=>(tot[b.id]||0)-(tot[a.id]||0));
-        if(!cands.length) break;
-        const c=cands[0], before=paidLen(c.s);
-        c.s.end=fmt(parseTime(c.s.end)-c.st);
-        tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
+  weekGroups().forEach(days=>{
+    const tot = projectedWeekTotals(days);
+    Object.keys(tot).forEach(id=>{              // pass 1: enforce the PT cap inside this week only
+      if(!PART_TIME.has(id)) return;
+      let g=100;
+      while(tot[id]>PT_MAX_HOURS+1e-9 && g-->0){
+        let best=null;
+        days.forEach(d=>d.shifts.forEach(s=>{
+          if(idOf(s.name)!==id) return; const st=trimStep(s); if(!st) return;
+          const len=parseTime(s.end)-parseTime(s.start);
+          // Take the cap out of a day that has slack over its own demand first,
+          // so enforcing the weekly cap doesn't push a day below demand in a way
+          // pass 2 may not be able to undo once the associate is at the cap.
+          const slack=d.demandHours==null ? 0 : dayHours(d)-d.demandHours;
+          if(!best || slack>best.slack || (slack===best.slack && len>best.len)) best={s,st,len,slack};
+        }));
+        if(!best) break;
+        const before=paidLen(best.s); best.s.end=fmt(parseTime(best.s.end)-best.st);
+        tot[id]+=paidLen(best.s)-before;
       }
+    });
+    // pass 2: land each day on its hour target, PTs only. With a budget set, the
+    // hours a day physically cannot absorb spill onto the days that still have
+    // part-time room, priority days first, until nothing more can be placed.
+    const extra = new Map();
+    let stuck = new Map(), baseStuck = new Map();
+    for(let round=0; round<6; round++){
+      const targets = dayTargets(days, extra);
+      const before = weekHours(days);
+      stuck = new Map();
+      // Priority days claim the shared part-time capacity first — in calendar
+      // order Wed/Thu would spend hours that Friday then cannot get back.
+      [...days].sort((a,b)=>priorityOf(b)-priorityOf(a)).forEach(d=>{
+        const target = targets.get(d);
+        if(target==null) return;
+        let g=400;
+        while(g-->0){
+          const diff=target-dayHours(d);
+          if(Math.abs(diff)<0.25) break;
+          // Only take a step that moves the day CLOSER to its target. Targets are
+          // not quarter-hour aligned, so without this an over-large step and its
+          // matching trim can bounce either side of the target until g runs out.
+          const closer = gain => Math.abs(diff-gain) < Math.abs(diff);
+          // The budget is a WEEK ceiling, not just a per-day one. Day targets are
+          // hit in 0.5h steps, so several days each landing within tolerance of
+          // their own target can still push the week past the budget.
+          const headroom = budgetOf(days)==null ? Infinity
+                         : budgetOf(days) - budgetSpent(days) + 0.25;
+          if(diff>0){
+            const c=d.shifts.filter(s=>isPT(s.name))
+              .map(s=>({s,id:idOf(s.name),st:extendStep(s,d)}))
+              .filter(c=>c.st && (tot[c.id]||0)<=PT_MAX_HOURS-0.5+1e-9)
+              .sort((a,b)=>(tot[a.id]||0)-(tot[b.id]||0))
+              .find(c=>{ const a=parseTime(c.s.start), b=parseTime(c.s.end);
+                         const gain=paidLenH(a,b+c.st)-paidLenH(a,b);
+                         return gain<=headroom && closer(gain); });
+            if(!c){ stuck.set(d, diff); break; }
+            const before=paidLen(c.s);
+            c.s.end=fmt(parseTime(c.s.end)+c.st);
+            tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
+          } else {
+            const c=d.shifts.filter(s=>isPT(s.name))
+              .map(s=>({s,id:idOf(s.name),st:trimStep(s)}))
+              .filter(c=>c.st)
+              .sort((a,b)=>(tot[b.id]||0)-(tot[a.id]||0))
+              .find(c=>{ const a=parseTime(c.s.start), b=parseTime(c.s.end);
+                         return closer(paidLenH(a,b-c.st)-paidLenH(a,b)); });
+            if(!c) break;
+            const before=paidLen(c.s);
+            c.s.end=fmt(parseTime(c.s.end)-c.st);
+            tot[c.id]=(tot[c.id]||0)+paidLen(c.s)-before;
+          }
+        }
+      });
+      if(!round) baseStuck = stuck;                      // report against the fair share, not the spill
+      if(budgetOf(days)==null) break;                    // flat buffer: one pass, as before
+      const remaining = budgetOf(days) - budgetSpent(days);
+      if(remaining < 0.25) break;                        // budget met
+      if(round && weekHours(days) <= before + 1e-9) break; // a whole round placed nothing
+      // Spill only onto TOP-priority days. Wed/Thu keep their weighted share and
+      // no more — otherwise, once the busy days hit their ceiling, every leftover
+      // hour lands on the two quietest days and they end up the best staffed of
+      // the week relative to demand, which is the opposite of the intent.
+      const top = Math.max(...days.filter(d=>targets.has(d)).map(priorityOf));
+      const open = days.filter(d=>targets.has(d) && !stuck.has(d) && priorityOf(d)>=top);
+      if(!open.length) break;                            // priority days are all at their ceiling
+      const wsum = open.reduce((t,d)=>t+priorityOf(d), 0) || 1;
+      open.forEach(d=>extra.set(d, (extra.get(d)||0) + remaining*priorityOf(d)/wsum));
+    }
+    // Re-check before reporting: a later spill round may have filled a day that
+    // was short of its share in round 1.
+    const finalTargets = dayTargets(days, null);
+    baseStuck.forEach((_,d)=>{
+      const short = (finalTargets.get(d) ?? 0) - dayHours(d);
+      if(short >= 0.25) notes.push(((d.date||"?").split(",")[0])+": "+short.toFixed(2)+"h short of its share — no part-timer can extend");
+    });
+    if(budgetOf(days)!=null){
+      const left = Math.round((budgetOf(days) - budgetSpent(days))*4)/4;
+      if(left >= 0.25) notes.push(weekLabel(days)+" is "+left.toFixed(2)+"h under the "+budgetOf(days)+"h budget — the remaining hours need NEW shifts, which balancing cannot add.");
+      if(left <= -0.25) notes.push(weekLabel(days)+" is "+Math.abs(left).toFixed(2)+"h OVER the "+budgetOf(days)+"h budget — part-timers cannot be trimmed further without dropping a day below its demand or a shift below "+PT_SHIFT_MIN+"h. Cut a shift to go lower.");
     }
   });
 }
+// One-line "where the week stands" summary, used by both balance and optimize.
+function budgetSummary(days){
+  const dem=weekDemand(days), got=budgetSpent(days);   // same measure the engine spends against
+  const B=budgetOf(days);
+  if(B==null) return `${weekLabel(days)} — demand ${dem}h · scheduled ${got}h (no budget set — using demand + ${WEEK_BUFFER}h per day).`;
+  const left=Math.round((B-got)*4)/4;
+  return `${weekLabel(days)} — demand ${dem}h · scheduled ${got}h · budget ${B}h · ${left>0.25?left+"h still to place":(left<-0.25?Math.abs(left)+"h over budget":"budget met ✓")}`;
+}
+// A budget under what is already scheduled means TRIMMING part-timers, which is
+// never what "we have extra hours" means. Make that direction explicit, and
+// refuse outright below demand.
+// Shifts that came in from an export and break a standing rule. Balancing only
+// moves shift ENDS, so it can never fix a start that is too early — these need
+// ⚙ Optimize (which re-times starts) or a manual edit, and until then they
+// should be visible rather than silently wrong.
+function standingRuleViolations(days=state.days){
+  const out=[];
+  days.forEach(d=>d.shifts.forEach(s=>{
+    const a=parseTime(s.start), b=parseTime(s.end); if(a==null||b==null) return;
+    const day=(d.date||"?").split(",")[0];
+    if(isMid(s.name)){
+      if(a<MID_START_MIN-1e-9) out.push(`${day}: ${s.name} starts ${s.start} — works mid shifts, no start before ${fmt(MID_START_MIN)}`);
+      if(b>MID_END_MAX+1e-9)   out.push(`${day}: ${s.name} ends ${s.end} — works mid shifts, off the floor by ${fmt(MID_END_MAX)}`);
+    }
+    const sw=startWindow(s.name);
+    if(sw && outsideWindow(sw,a))
+      out.push(`${day}: ${s.name} starts ${s.start} — standing clock-in is ${startWindowLabel(sw)}`);
+    if(s.dm && a<DM_MIN-1e-9) out.push(`${day}: ${s.name} starts ${s.start} — DM cannot start before ${fmt(DM_MIN)}`);
+    if(MORNING.has(idOf(s.name)||"") && a>=12) out.push(`${day}: ${s.name} starts ${s.start} — standing morning rule`);
+  }));
+  return out;
+}
+// Earliest hour a person could legally clock in on a day, and what sets it.
+// Descriptive only — this reports the rules, it does not apply them.
+function earliestLegalStart(day, s){
+  const av = availFor(s.name, day.date);
+  if(av === null) return {h:null, why:"off this day"};
+  let h = OPEN, why = null;
+  if(av && av[0] > h){ h = av[0]; why = "availability from "+fmt(av[0]); }
+  const sw = startWindow(s.name);
+  if(sw && sw[0] > h){ h = sw[0]; why = "clock-in window "+startWindowLabel(sw); }
+  if(isMid(s.name) && MID_START_MIN > h){ h = MID_START_MIN; why = "mid shift, no start before "+fmt(MID_START_MIN); }
+  if(s.dm && DM_MIN > h){ h = DM_MIN; why = "DM cannot start before "+fmt(DM_MIN); }
+  if(closedPrevDay(s.name, state.days.indexOf(day)) && NO_OPEN_BEFORE > h){ h = NO_OPEN_BEFORE; why = "closed the day before"; }
+  return {h, why};
+}
+// Target hours the day cannot fill, and why. The optimizer already warns when an
+// hour is OVERfilled; this is the other half — "you asked for 2 at 4 AM and got
+// 1" is otherwise something you have to spot by eye.
+function underfilledTargets(day){
+  const dem = day.demand || {}, out = [];
+  const got = {};
+  day.shifts.forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); got[h]=(got[h]||0)+1; } });
+  let spreadThin = 0, targetHours = 0;
+  Object.keys(dem).map(Number).sort((a,b)=>a-b).forEach(h=>{
+    const target = dem[h]||0, have = got[h]||0;
+    targetHours += target;
+    if(have >= target) return;
+    const reasons = {};
+    let eligible = 0;
+    day.shifts.forEach(s=>{
+      const e = earliestLegalStart(day, s);
+      if(e.h != null && e.h <= h) eligible++;
+      else if(e.why) reasons[e.why] = (reasons[e.why]||0) + 1;
+    });
+    // Two very different situations: a target nobody is ALLOWED to cover, and a
+    // target there simply aren't enough people left for. Only the first is a
+    // rule problem, and only the first is worth naming names.
+    if(eligible < target)
+      out.push(`${fmt(h)}: ${have} clocking in vs target ${target} — only ${eligible} of the ${day.shifts.length} on this day can legally start by then`
+        + (Object.keys(reasons).length ? ` (${Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([w,c])=>`${c}× ${w}`).join(", ")})` : ""));
+    else spreadThin += target - have;
+  });
+  if(spreadThin)
+    out.push(`${spreadThin} more clock-in${spreadThin>1?"s":""} wanted across the rest of the day — ${day.shifts.length} people on for ${targetHours} target clock-ins, so the day runs out of bodies rather than breaking a rule.`);
+  return out;
+}
+/* ---- Shifts the tool added itself ----
+   Anything the fill engines create is somebody's real day being changed. It
+   stays marked until you have actually asked them and ticked it off, so an
+   auto-added shift can never quietly become a posted one. */
+const pendingAdds = (days=state.days) =>
+  days.flatMap(d => d.shifts.map((s,i)=>({d,s,i})).filter(x=>x.s.autoAdded));
+function confirmList(days=state.days){
+  return pendingAdds(days).map(({d,s})=>{
+    const av = availFor(s.name, d.date);
+    const fits = av===null ? " — NOT AVAILABLE that day per their profile"
+      : (av && (parseTime(s.start)<av[0]-1e-9 || parseTime(s.end)>av[1]+1e-9))
+        ? ` — outside their ${fmt(av[0])}–${fmt(av[1])} availability`
+        : (av ? "" : " — no availability on file");
+    return `${(d.date||"?").split(",")[0]}: ${s.name} ${s.start}–${s.end}${fits}`;
+  });
+}
+/* ---- Change requests ----
+   Associates write only a TIME on the draft printout ("4-12:30"), never a
+   reason. That makes the request structured enough to apply on approval, and
+   to check against the rules at the moment you say yes.
+
+     s.request = { start, end, status, wasStart, wasEnd }
+
+   Nothing is applied without you pressing ✓, and a rule breach warns rather
+   than blocks — you can still agree to something awkward, you just find out. */
+// "4-12:30", "8:30-5", "2pm-10pm" -> {start,end} in decimal hours, or null.
+// Bare numbers are read against a 4 AM - 10 PM trading day, and the end is
+// pushed to the afternoon if reading it literally would land before the start.
+function parseRequest(text){
+  const m = String(text||"").trim().toLowerCase()
+    .match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|–|—|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if(!m) return null;
+  const bare = (h,mi,ap) => {
+    let v = h % 12;
+    if(ap === "pm") v += 12;
+    else if(ap === "am"){ /* keep */ }
+    else if(h === 12) v = 12;
+    else if(h >= 1 && h <= 3) v += 12;      // 1-3 with no marker means afternoon
+    return v + (mi ? +mi/60 : 0);
+  };
+  let a = bare(+m[1], m[2], m[3]);
+  let b = bare(+m[4], m[5], m[6]);
+  while(b <= a && b + 12 <= CLOSE) b += 12;  // "8-4" means 8 AM to 4 PM
+  if(!(b > a)) return null;
+  return {start:a, end:b};
+}
+const hasRequest = s => s && s.request && s.request.start!=null;
+// What breaks if this request is granted. Warns, never blocks.
+function requestBreaches(day, s, start, end){
+  const out=[];
+  const av = availFor(s.name, day.date);
+  if(av === null) out.push("they are marked off that day");
+  else if(av && (start < av[0]-1e-9 || end > av[1]+1e-9))
+    out.push(`outside their ${fmt(av[0])}–${fmt(av[1])} availability`);
+  const sw = startWindow(s.name);
+  if(sw && outsideWindow(sw, start)) out.push(`clock-in window is ${startWindowLabel(sw)}`);
+  if(isMid(s.name) && (start < MID_START_MIN-1e-9 || end > MID_END_MAX+1e-9))
+    out.push(`mid shift only, ${fmt(MID_START_MIN)}–${fmt(MID_END_MAX)}`);
+  if(s.dm && start < DM_MIN-1e-9) out.push(`DM cannot start before ${fmt(DM_MIN)}`);
+  if(start < OPEN-1e-9 || end > CLOSE+1e-9) out.push(`outside store hours ${fmt(OPEN)}–${fmt(CLOSE)}`);
+  const di = state.days.indexOf(day);
+  if(di>=0 && !restAllows(idOf(s.name), di, start, end)) out.push(`leaves under ${MIN_REST_HOURS}h rest either side`);
+  return out;
+}
+// Approve: snapshot what the shift was, then set it to what they asked for.
+function decideRequest(di, si, status){
+  const day = state.days[di], s = day.shifts[si];
+  if(!s || !s.request) return [];
+  if(status === "declined"){ s.request.status = "declined"; return []; }
+  const p = parseRequest(s.request.text!=null ? s.request.text : "");
+  const start = s.request.start ?? (p && p.start), end = s.request.end ?? (p && p.end);
+  if(start==null || end==null) return ["could not read that time"];
+  const breaches = requestBreaches(day, s, start, end);
+  s.request.wasStart = s.start; s.request.wasEnd = s.end;
+  s.request.status = "approved";
+  s.start = fmt(start); s.end = fmt(end);
+  return breaches;
+}
+function changeRequestReport(days=state.days){
+  const g = {approved:[], declined:[], pending:[]};
+  days.forEach(d=>d.shifts.forEach(s=>{
+    if(!s.request || (s.request.start==null && !s.request.text)) return;
+    const day=(d.date||"?").split(",")[0];
+    const asked = s.request.start!=null ? `${fmt(s.request.start)}–${fmt(s.request.end)}` : String(s.request.text||"");
+    if(s.request.status==="approved")
+      g.approved.push(`${day}: ${s.name}  ${s.request.wasStart}–${s.request.wasEnd}  →  ${s.start}–${s.end}`);
+    else if(s.request.status==="declined")
+      g.declined.push(`${day}: ${s.name} asked for ${asked} — declined, still ${s.start}–${s.end}`);
+    else g.pending.push(`${day}: ${s.name} asked for ${asked} — currently ${s.start}–${s.end}`);
+  }));
+  return g;
+}
+function budgetGuard(){
+  for(const days of weekGroups()){
+    const B=budgetOf(days); if(B==null) continue;
+    const dem=weekDemand(days), got=budgetSpent(days), lbl=weekLabel(days);
+    if(B < dem){
+      alert(`${lbl}: budget ${B}h is below that week's demand of ${dem}h.\nRaise the budget — balancing will not cut any day below its own demand.`);
+      return false;
+    }
+    if(B < got-0.25 && !confirm(
+      `${lbl}: budget ${B}h is BELOW the ${got}h already scheduled.\n\nBalancing will TRIM part-timer hours by about ${Math.round((got-B)*4)/4}h (never below a day's demand). Full-timers are not touched.\n\nContinue?`)) return false;
+  }
+  return true;
+}
+function aimLine(){
+  return weekGroups().some(g=>budgetOf(g)!=null)
+    ? `each week reaches its own budget, with the hours above demand weighted to Sat/Sun/Mon/Tue/Fri before Wed/Thu (weeks without a budget aim at demand+${WEEK_BUFFER}h per day)`
+    : `each day with a demand number reaches demand+${WEEK_BUFFER}h`;
+}
 function balanceHours(){
-  if(!confirm("Balance the whole week?\nPart-timer shifts get extended/trimmed so each day with a demand number reaches demand+"+WEEK_BUFFER+"h (PT max "+PT_MAX_HOURS+"h/week, shifts 6–7½h). Full-timers are not touched.")) return;
+  if(!budgetGuard()) return;
+  if(!confirm("Balance all loaded weeks?\nPart-timer shifts get extended/trimmed so "+aimLine()+" (PT max "+PT_MAX_HOURS+"h in each Saturday-Friday week, shifts 6–8½h). Full-timers are not touched.\n\n"+weekGroups().map(budgetSummary).join("\n"))) return;
   const notes=[];
   balanceCore(notes);
   save(); renderAll();
-  alert(notes.length ? "Balanced with warnings:\n"+notes.join("\n") : "Week balanced ✓ — re-run ⚙ Optimize on each day to re-place the shifts.");
+  report("Balance hours", [
+    { label:notes.length?"Warnings":"Complete", tone:notes.length?"warn":"ok",
+      items:notes.length?notes:["Week balanced ✓ — re-run ⚙ Optimize on each day to re-place the shifts."] },
+    { label:"Shifts breaking a standing rule — run ⚙ Optimize to re-time them", tone:"danger",
+      items:standingRuleViolations() }
+  ]);
+}
+// Live readout under the day bar: what the week is aiming at and how much of
+// the budget is still unplaced. Shown per Saturday-Friday week group.
+// Week-level tiles in the header: total hours worked, how that sits against
+// demand, and how much of the budget is still unplaced. These belong at the top
+// next to the day stats, not buried in a chip on the day strip.
+function renderWeekStats(){
+  const el=document.getElementById("weekStats"); if(!el) return;
+  const groups=weekGroups();
+  // Fall back to the FIRST week group, never to state.days — with a stale active
+  // index that would silently add two payroll weeks together.
+  const days=groups.find(g=>g.includes(cur())) || groups[0] || [];
+  if(!days.length){ el.innerHTML=""; return; }
+  const wk=weekHours(days), dem=weekDemand(days), diff=Math.round((wk-dem)*4)/4;
+  const hasDemand=days.some(d=>d.demandHours!=null);          // a real 0 is not "absent"
+  const tile=(b,s,sub,cls="")=>`<div class="stat ${cls}"><b>${b}</b><span>${s}</span>${sub?`<i>${sub}</i>`:""}</div>`;
+  let out=tile(`${wk}h`, "Week worked", `${days.length} day${days.length>1?"s":""} loaded`);
+  if(hasDemand) out+=tile(`${diff>=0?"+":""}${diff}h`, "vs demand", `${dem}h demand`, diff<0?"bad":"good");
+  const B=budgetOf(days);
+  if(B!=null){
+    const left=Math.round((B-budgetSpent(days))*4)/4;
+    out+=tile(`${B}h`, "Budget",
+      left>0.25?`${left}h still to place`:(left<-0.25?`${Math.abs(left)}h over`:"met ✓"),
+      left>0.25?"mid":(left<-0.25?"bad":"good"));
+  }
+  el.innerHTML=out;
+}
+// Standing banner for shifts the tool added. Survives dismissing the report, so
+// it cannot be forgotten between running the optimizer and posting the week.
+function renderConfirmLine(){
+  const el=document.getElementById("confirmLine"); if(!el) return;
+  const list=pendingAdds();
+  if(!list.length){ el.innerHTML=""; return; }
+  const days=[...new Set(list.map(x=>(x.d.date||"?").split(",")[0]))];
+  const risky=confirmList().filter(t=>t.includes("—")).length;
+  el.innerHTML = `⚠ <b>${list.length} shift${list.length>1?"s":""} the optimizer added</b> — ask ${
+    [...new Set(list.map(x=>x.s.name.split(" ")[0]))].join(", ")} if they can take ${list.length>1?"them":"it"} (${days.join(", ")}).`
+    + (risky?` <b>${risky} of them sit outside the availability on file.</b>`:"")
+    + ` Tick each one off in 🔒 Per-associate rules once confirmed.`;
+}
+function renderBudgetLine(){
+  const el=document.getElementById("budgetLine"); if(!el) return;
+  const bi=document.getElementById("budgetHrs");
+  if(bi && document.activeElement!==bi) bi.value = budgetOf(activeWeek()) ?? "";
+  // Totals live in the header tiles now; this line carries only what they can't
+  // show — the per-day hour targets the budget implies.
+  const multi = weekGroups().length>1;
+  el.innerHTML = weekGroups().map(days=>{
+    const dem=weekDemand(days);
+    const B=budgetOf(days);
+    // With more than one week loaded, every line has to say which week it is.
+    const tag = multi ? `<b>${weekLabel(days)}</b> — ` : "";
+    if(B==null)
+      return `${tag}no budget set — each day aims at its own demand + ${WEEK_BUFFER}h. Set a week budget to spread hours by priority instead.`;
+    const t=dayTargets(days, null);
+    // Current hours are already on the day chips below — show only the aim here.
+    const split=days.filter(d=>t.has(d)).map(d=>
+      `<b>${weekdayOf(d.date)||"?"}</b> ${Math.round(t.get(d)*4)/4}`).join(" · ");
+    const warn=B<dem ? ` — <b style="color:var(--danger)">budget is below demand (${dem}h)</b>` : "";
+    return `${tag}aiming for: ${split} <span style="opacity:.7">· Sat/Sun/Mon/Tue/Fri weighted ${DAY_PRIORITY.Sat}, Wed/Thu ${DAY_PRIORITY.Wed}</span>${warn}`;
+  }).join("<br>");
 }
 function renderWeekBar(){
   const el=document.getElementById("weekBar"); if(!el) return;
@@ -610,22 +1226,54 @@ function renderWeekBar(){
     const diff=dem==null?null:Math.round((sched-dem)*4)/4;
     const bg=diff==null?"#f8fafc":(diff>=WEEK_BUFFER?"#dcfce7":(diff>=0?"#fef3c7":"#fee2e2"));
     return `<button data-day="${i}" style="background:${bg};border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer;${i===state.active?"outline:2px solid var(--accent);":""}">${(d.date||"?").split(",")[0]} · ${sched}h${dem!=null?` / ${dem} <b>(${diff>=0?"+":""}${diff})</b>`:""}</button>`;
-  }).join("");
+  }).join("");   // week totals now live in the header tiles (renderWeekStats)
   const inp=document.getElementById("demandHrs");
   if(inp && document.activeElement!==inp) inp.value=cur().demandHours ?? "";
 }
 function renderWeekHours(){
   const el=document.getElementById("weekHours"); if(!el) return;
-  const tot=weekTotals(), ids={};
-  state.days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id&&!ids[id]) ids[id]=s.name; }));
-  const head=`<thead><tr><th>Associate</th><th class="c">Status</th>${state.days.map(d=>`<th class="c">${(d.date||"?").slice(0,3)}</th>`).join("")}<th class="c">Week</th></tr></thead>`;
-  const rows=Object.entries(ids).sort((a,b)=>a[1].localeCompare(b[1])).map(([id,nm])=>{
-    const pt=PART_TIME.has(id), w=Math.round((tot[id]||0)*4)/4, over=pt&&w>PT_MAX_HOURS+1e-9;
-    const cells=state.days.map(d=>{ const s=d.shifts.find(x=>idOf(x.name)===id);
-      return `<td class="c">${s?paidLen(s):'<span class="empty">—</span>'}</td>`; }).join("");
-    return `<tr><td class="name">${nm}</td><td class="c">${pt?"PT":"<b>FT</b>"}</td>${cells}<td class="c" style="font-weight:700;${over?"color:var(--danger)":""}">${w}${pt?' <span class="empty">/ '+PT_MAX_HOURS+'</span>':""}</td></tr>`;
+  el.innerHTML=weekGroups().map(days=>{
+    const tot=projectedWeekTotals(days), ids={};
+    days.forEach(d=>d.shifts.forEach(s=>{ const id=idOf(s.name); if(id&&!ids[id]) ids[id]=s.name; }));
+    const label=(days[0]?.date||"Loaded week").split("·")[0].trim();
+    const head=`<thead><tr><th colspan="${days.length+3}" style="text-align:left;background:#eef2ff">Week of ${label}</th></tr><tr><th>Associate</th><th class="c">Status</th>${days.map(d=>`<th class="c">${(d.date||"?").slice(0,3)}</th>`).join("")}<th class="c">Week</th></tr></thead>`;
+    const rows=Object.entries(ids).sort((a,b)=>a[1].localeCompare(b[1])).map(([id,nm])=>{
+      const pt=PART_TIME.has(id), cap=pt?PT_MAX_HOURS:FT_MAX_HOURS, w=Math.round((tot[id]||0)*4)/4, over=w>cap+1e-9;
+      const cells=days.map(d=>{ const s=d.shifts.find(x=>idOf(x.name)===id);
+        return `<td class="c">${s?paidLen(s):'<span class="empty">—</span>'}</td>`; }).join("");
+      return `<tr><td class="name">${nm}</td><td class="c">${pt?"PT":"<b>FT</b>"}</td>${cells}<td class="c" style="font-weight:700;${over?"color:var(--danger)":""}" title="Includes hours reported outside the visible OMNI workgroup">${w} <span class="empty">/ ${cap}</span></td></tr>`;
+    }).join("");
+    // Totals block: hours worked per day and for the week, against demand and
+    // the budget. This is the "how many hours did we actually schedule" answer.
+    const wk=weekHours(days), dem=weekDemand(days), diff=Math.round((wk-dem)*4)/4;
+    const capacity=Object.keys(ids).reduce((t,id)=>t+(PART_TIME.has(id)?PT_MAX_HOURS:FT_MAX_HOURS),0);
+    const cell=(v,extra="")=>`<td class="c" style="font-weight:700;${extra}">${v}</td>`;
+    const sign=v=>(v>=0?"+":"")+v;
+    let foot=`<tr style="background:#f1f5f9;border-top:2px solid var(--ink)">`
+      +`<td class="name" style="font-weight:800">TOTAL WORKED</td><td class="c"></td>`
+      +days.map(d=>cell(dayHours(d))).join("")
+      +cell(wk,"font-size:14px");
+    foot+=`</tr>`;
+    if(dem){
+      foot+=`<tr style="background:#f8fafc"><td class="name" style="color:var(--muted)">Demand</td><td class="c"></td>`
+        +days.map(d=>`<td class="c" style="color:var(--muted)">${d.demandHours??"—"}</td>`).join("")
+        +`<td class="c" style="color:var(--muted)">${dem}</td></tr>`
+        +`<tr style="background:#f8fafc"><td class="name" style="color:var(--muted)">Over / under demand</td><td class="c"></td>`
+        +days.map(d=>{ const v=d.demandHours==null?null:Math.round((dayHours(d)-d.demandHours)*4)/4;
+            return `<td class="c" style="color:${v==null?"var(--muted)":(v<0?"var(--danger)":"#15803d")}">${v==null?"—":sign(v)}</td>`; }).join("")
+        +`<td class="c" style="font-weight:700;color:${diff<0?"var(--danger)":"#15803d"}">${sign(diff)}</td></tr>`;
+    }
+    const Bw=budgetOf(days);
+    if(Bw!=null){
+      const left=Math.round((Bw-budgetSpent(days))*4)/4;
+      const msg=left>0.25?`${left}h still to place`:(left<-0.25?`${Math.abs(left)}h OVER budget`:"budget met ✓");
+      foot+=`<tr style="background:#f8fafc"><td class="name" style="color:var(--muted)">Budget ${Bw}h</td>`
+        +`<td class="c" colspan="${days.length+2}" style="text-align:right;font-weight:700;color:${left>0.25?"#b45309":(left<-0.25?"var(--danger)":"#15803d")}">${msg}</td></tr>`;
+    }
+    foot+=`<tr style="background:#f8fafc"><td class="name" style="color:var(--muted)">If everyone hit their cap</td>`
+      +`<td class="c" colspan="${days.length+2}" style="text-align:right;color:var(--muted)">${Math.round(capacity*4)/4}h across ${Object.keys(ids).length} associates · <b>${Math.round((capacity-wk)*4)/4}h</b> of unused capacity</td></tr>`;
+    return head+`<tbody>${rows}</tbody><tfoot>${foot}</tfoot>`;
   }).join("");
-  el.innerHTML=head+`<tbody>${rows}</tbody>`;
 }
 
 /* ---- Break policy (edit these numbers to match your store) ----
@@ -711,29 +1359,32 @@ function compute(shifts){
   const seen = {};  // count associates already placed at each start time -> stagger their breaks
   const people = shifts.map((s,i)=>{
         const start=parseTime(s.start), end=parseTime(s.end);
+        const training = !!s.training;
         const ok = start!=null&&end!=null&&end>start;
-        const idx = ok ? (seen[start]=(seen[start]||0)+1)-1 : 0;
-        const breaks = ok ? makeBreaks(start,end, idx*STAGGER) : [];
-        return { oi:i, name:s.name||"(unnamed)", start, end, dm:!!s.dm, am:!!s.am, note:s.note||"", breaks, disp:0, slots:[], tasks:[] };
+        const idx = ok && !training ? (seen[start]=(seen[start]||0)+1)-1 : 0;
+        const breaks = ok && !training ? makeBreaks(start,end, idx*STAGGER) : [];
+        return { oi:i, name:s.name||"(unnamed)", start, end, dm:!!s.dm, am:!!s.am, training, note:s.note||"", breaks, disp:0, slots:[], tasks:[] };
       })
     .filter(p=>p.start!=null && p.end!=null && p.end>p.start);
   if(!people.length) return { people:[], timeline:[] };
   people.sort((a,b)=> a.start-b.start || a.end-b.end || a.name.localeCompare(b.name));  // order by clock-in
-  staggerShortBreaks(people);   // one associate on a 15-min break at a time
-  assignTasks(people);          // auto-assign recurring tasks, evenly
+  const operational = people.filter(p=>!p.training);
+  staggerShortBreaks(operational);   // one operational associate on a 15-min break at a time
+  assignTasks(operational);          // training-only shifts get no store tasks
   const dayStart = Math.floor(Math.min(...people.map(p=>p.start)));
   const dayEnd   = Math.ceil (Math.max(...people.map(p=>p.end)));
   const DISP_START = 6, DISP_END = 20;   // dispensing only runs 6am–8pm
   const timeline = [];
   for(let h=dayStart; h<dayEnd; h++){
-    const present  = people.filter(p=>p.start<=h && p.end>h);
+    const present  = operational.filter(p=>p.start<=h && p.end>h);
     const onBreak  = p => p.breaks.some(b=>overlapsHour(b,h));
     const eligible = present.filter(p=>!onBreak(p));
     if(!present.length){ timeline.push({h,who:null,others:[]}); continue; }
     let on=null;
     // STRICT once-per-day: whoever already had their dispense hour NEVER dispenses again.
     // If everyone present has dispensed, the hour shows no dispenser (visible in the timeline).
-    const pool = (h>=DISP_START && h<DISP_END) ? eligible.filter(p=>p.disp===0) : [];
+    const pool = (h>=DISP_START && h<DISP_END)
+      ? eligible.filter(p=>p.disp===0 && !NO_DISPENSE.has(idOf(p.name)||"")) : [];
     if(pool.length){
       pool.sort((a,b)=> a.disp-b.disp || a.start-b.start || a.name.localeCompare(b.name));
       on=pool[0]; on.disp++; on.slots.push(slot(h));
@@ -746,6 +1397,7 @@ function compute(shifts){
 
 function renderEditor(){
   document.getElementById("reportDate").value = cur().date;
+  document.getElementById("reportDatePrint").textContent = cur().date || "";
   document.getElementById("editBody").innerHTML = cur().shifts.map((s,i)=>`
     <tr class="edit">
       <td><input data-i="${i}" data-k="name" value="${(s.name||"").replace(/"/g,'&quot;')}" placeholder="Name"></td>
@@ -754,24 +1406,45 @@ function renderEditor(){
       <td class="c"><input type="checkbox" data-i="${i}" data-k="dm" ${s.dm?"checked":""} title="Department Manager"></td>
       <td class="c"><input type="checkbox" data-i="${i}" data-k="am" ${s.am?"checked":""} title="Must stay in the morning"></td>
       <td class="c"><input type="checkbox" data-i="${i}" data-k="cl" ${s.cl?"checked":""} title="Closed yesterday — can't open today"></td>
+      ${requestCell(s,i)}
       <td class="col-actions"><button class="btn-x" data-del="${i}" title="Remove">✕</button></td>
     </tr>`).join("");
 }
+// What the associate wrote on the draft sheet, plus the ✓ / ✗ decision.
+function requestCell(s,i){
+  const r = s.request || {};
+  if(r.status === "approved")
+    return `<td class="reqcell"><span class="reqdone ok" title="was ${r.wasStart}–${r.wasEnd}">✓ ${r.wasStart}–${r.wasEnd} → ${s.start}–${s.end}</span>
+      <button class="btn-x" data-reqclear="${i}" title="Undo this decision">✕</button></td>`;
+  if(r.status === "declined")
+    return `<td class="reqcell"><span class="reqdone no">✗ declined</span>
+      <button class="btn-x" data-reqclear="${i}" title="Undo this decision">✕</button></td>`;
+  const txt = (r.text!=null ? r.text : "").replace(/"/g,'&quot;');
+  const p = parseRequest(r.text||"");
+  return `<td class="reqcell">
+      <input class="reqin" data-i="${i}" data-k="reqtext" value="${txt}" placeholder="4-12:30">
+      ${txt ? (p ? `<button class="btn-ok" data-reqyes="${i}" title="Approve — sets the shift to ${fmt(p.start)}–${fmt(p.end)}">✓</button>
+                    <button class="btn-x" data-reqno="${i}" title="Decline">✗</button>`
+                 : `<span class="reqbad" title="Write it like 4-12:30">?</span>`) : ""}
+    </td>`;
+}
 
 const GRID_HEAD = `<colgroup>
-  <col style="width:11%"><col style="width:6%"><col style="width:6%"><col style="width:4%">
-  <col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:14%"><col style="width:19%">
+  <!-- Associate needs the room: "GURSHARANDEEP.S 9488" does not fit in 11%.
+       Start/End need enough for "12:30 PM" without wrapping mid-time. -->
+  <col style="width:15%"><col style="width:7%"><col style="width:7%"><col style="width:5%">
+  <col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:11%"><col style="width:10%"><col style="width:18%"><col class="reqcol" style="width:13%">
 </colgroup><thead><tr>
   <th>Associate</th><th class="c">Start</th><th class="c">End</th><th class="c">Hrs</th>
   <th class="c">1st Break</th><th class="c">Lunch</th><th class="c">2nd Break</th>
-  <th>Dispensing</th><th>Tasks</th><th>Notes</th>
+  <th>Dispensing</th><th>Tasks</th><th>Notes</th><th class="reqcol">Time you need</th>
 </tr></thead>`;
 function statHTML(people){
-  let paid = 0;
-  people.forEach(p=>{ const l=p.breaks.find(b=>b.label==="Lunch"); paid += (p.end-p.start)-(l?l.end-l.start:0); });
-  const cover = people.length ? `${fmt(Math.min(...people.map(p=>p.start)))} – ${fmt(Math.max(...people.map(p=>p.end)))}` : "—";
+  const operational = people.filter(p=>!p.training);
+  const paid = people.reduce((sum,p)=>sum+paidLenH(p.start,p.end),0);
+  const cover = operational.length ? `${fmt(Math.min(...operational.map(p=>p.start)))} – ${fmt(Math.max(...operational.map(p=>p.end)))}` : "—";
   return people.length ? [
-    [`${people.length}`, "Associates", ""], [cover, "Coverage", ""], [`${(Math.round(paid*4)/4)}h`, "Paid hours", " paid"],
+    [`${operational.length}`, "On-floor associates", ""], [cover, "Floor coverage", ""], [`${(Math.round(paid*4)/4)}h`, "Paid hours", " paid"],
   ].map(([b,s,cls])=>`<div class="stat${cls}"><b>${b}</b><span>${s}</span></div>`).join("") : "";
 }
 function shiftRows(people){
@@ -785,17 +1458,17 @@ function shiftRows(people){
   return people.map(p=>{
     const brks = p.breaks.filter(b=>b.label==="Break");
     const lunch = p.breaks.find(b=>b.label==="Lunch");
-    const hrs = (p.end-p.start) - (lunch?lunch.end-lunch.start:0);   // lunch unpaid
+    const hrs = paidLenH(p.start,p.end);
     return `<tr>
-      <td class="name">${p.am?"☀ ":""}${p.name}</td>
+      <td class="name">${p.training?"🖥 ":(p.am?"☀ ":"")}${p.name}</td>
       <td class="c">${fmt(p.start)}</td><td class="c">${fmt(p.end)}</td>
       <td class="c hrs">${(Math.round(hrs*4)/4).toString().replace(/\.5$/,"½").replace(/\.25$/,"¼").replace(/\.75$/,"¾")}h</td>
       <td class="c brk">${rng(brks[0])}</td>
       <td class="c lunchcell">${rng(lunch)}</td>
       <td class="c brk">${rng(brks[1])}</td>
-      <td class="slots">${p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash}</td>
-      <td class="slots tasks">${taskChips(p.tasks)}</td>
-      <td class="notecell"><input class="note" data-oi="${p.oi}" value="${(p.note||"").replace(/"/g,'&quot;')}" placeholder="e.g. called in, done…"></td>
+      <td class="slots">${p.training?'<span class="training-pill">Online training only</span>':(p.slots.length?p.slots.map(s=>`<span>${s}</span>`).join(""):dash)}</td>
+      <td class="slots tasks">${p.training?'<span class="training-pill">No store duties</span>':taskChips(p.tasks)}</td>
+      <td class="notecell"><input class="note" data-oi="${p.oi}" value="${(p.note||"").replace(/"/g,'&quot;')}" placeholder="e.g. called in, done…"></td><td class="reqcol c"><span class="reqbox">&nbsp;&nbsp;&nbsp;&nbsp;</span> to <span class="reqbox">&nbsp;&nbsp;&nbsp;&nbsp;</span></td>
     </tr>`;}).join("");
 }
 function renderReport(){
@@ -811,6 +1484,7 @@ function renderReport(){
     const cells = timeline.map(t=>{
       const h=t.h;
       if(!(p.start<=h && p.end>h)) return `<td class="cell off"></td>`;
+      if(p.training)              return `<td class="cell training" title="Online training only">T</td>`;
       if(t.who===p)                return `<td class="cell disp" title="Dispensing ${slot(h)}">•</td>`;
       if(p.breaks.some(b=>b.label==="Lunch"&&overlapsHour(b,h))) return `<td class="cell lunch" title="Lunch">L</td>`;
       if(p.breaks.some(b=>overlapsHour(b,h)))                    return `<td class="cell brk" title="Break">B</td>`;
@@ -823,7 +1497,7 @@ function renderReport(){
 
 const COV_HRS = (()=>{ const a=[]; for(let h=4;h<=21;h++) a.push(h); return a; })();  // 4am–9pm
 function schedStarts(){
-  const c={}; cur().shifts.forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); c[h]=(c[h]||0)+1; } });
+  const c={}; cur().shifts.filter(s=>!s.training).forEach(s=>{ const t=parseTime(s.start); if(t!=null){ const h=Math.floor(t); c[h]=(c[h]||0)+1; } });
   return c;
 }
 function covCell(h, starts){
@@ -836,7 +1510,7 @@ function renderCoverage(){
   const head = `<thead><tr><th class="rowname">Hour</th>${COV_HRS.map(h=>`<th>${compactH(h)}</th>`).join("")}</tr></thead>`;
   const tRow = `<tr><td class="rowname">Target in</td>${COV_HRS.map(h=>`<td><input class="dem" type="number" min="0" data-h="${h}" value="${dem[h]??""}" placeholder="–"></td>`).join("")}</tr>`;
   const sRow = `<tr id="covSched"><td class="rowname">Scheduled in</td>${COV_HRS.map(h=>covCell(h,starts)).join("")}</tr>`;
-  const spans = cur().shifts.map(s=>[parseTime(s.start), parseTime(s.end)]).filter(x=>x[0]!=null&&x[1]!=null&&x[1]>x[0]);
+  const spans = cur().shifts.filter(s=>!s.training).map(s=>[parseTime(s.start), parseTime(s.end)]).filter(x=>x[0]!=null&&x[1]!=null&&x[1]>x[0]);
   const onAt = x => spans.filter(v=>v[0]<=x && v[1]>x).length;
   const fRow = `<tr><td class="rowname">On floor</td>${COV_HRS.map(h=>{
     const c=Math.min(onAt(h), onAt(h+0.5));
@@ -856,16 +1530,18 @@ function renderOptimize(){
 function renderFlags(){
   const wd = weekdayOf(cur().date);
   document.getElementById("flags").innerHTML =
-    `<thead><tr><th>Associate</th><th>Avail. ${wd||'<span class="empty">(put the weekday in the date)</span>'}</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="c" title="Closed yesterday — can't open; earliest start ${fmt(NO_OPEN_BEFORE)}">🌙 Closed yday</th><th class="col-actions"></th></tr></thead><tbody>` +
+    `<thead><tr><th>Associate</th><th>Avail. ${wd||'<span class="empty">(put the weekday in the date)</span>'}</th><th class="c" title="Department Manager — never starts before 7 AM">DM ≥7 AM</th><th class="c" title="Shift must start before noon">☀ Morning</th><th class="c" title="Trained to dispense — untrained associates are never given a dispensing hour">🔄 Dispense</th><th class="c" title="Mid shift only — never opens, never closes">🕙 Mid</th><th class="c" title="Closed yesterday — can't open; earliest start ${fmt(NO_OPEN_BEFORE)}">🌙 Closed yday</th><th class="col-actions"></th></tr></thead><tbody>` +
     cur().shifts.map((s,i)=>{
       const av = availFor(s.name, cur().date);
       const avTxt = av===undefined ? '<span class="empty">no data</span>'
         : (av===null ? '<b style="color:var(--danger)">OFF this day</b>' : `${fmt(av[0])} – ${fmt(av[1])}`);
       return `<tr>
-      <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}${closedPrevDay(s.name,state.active)?' <span title="closed the previous day — earliest start '+fmt(NO_OPEN_BEFORE)+'">🌙</span>':''}</td>
+      <td class="name">${(s.name||"(unnamed)").replace(/</g,"&lt;")}${s.training?' <span title="Online training only — not operational coverage">🖥 TRAINING</span>':''}${s.locked?' <span title="Fixed shift — optimizer will not move it">🔒</span>':''}${closedPrevDay(s.name,state.active)?' <span title="closed the previous day — earliest start '+fmt(NO_OPEN_BEFORE)+'">🌙</span>':''}${startWindow(s.name)?' <span class="startpill" title="standing clock-in window">🕓 '+startWindowLabel(startWindow(s.name))+'</span>':''}${s.autoAdded?' <span class="newpill" data-ack="'+i+'" title="Added by the optimizer — click once you have confirmed it with them">🆕 confirm</span>':''}</td>
       <td>${avTxt}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="dm" ${s.dm?"checked":""}></td>
       <td class="c">${MORNING.has(idOf(s.name)||"") ? '<input type="checkbox" checked disabled title="standing rule: always morning">' : `<input type="checkbox" data-fi="${i}" data-fk="am" ${s.am?"checked":""}>`}</td>
+      <td class="c">${NO_DISPENSE.has(idOf(s.name)||"") ? '<span title="Not trained to dispense — still counts as floor coverage" style="color:var(--muted)">✕ untrained</span>' : '<input type="checkbox" checked disabled title="trained to dispense">'}</td>
+      <td class="c">${isMid(s.name) ? `<input type="checkbox" checked disabled title="standing rule: mid shift only, ${fmt(MID_START_MIN)}–${fmt(MID_END_MAX)}">` : '<span class="empty">—</span>'}</td>
       <td class="c"><input type="checkbox" data-fi="${i}" data-fk="cl" ${s.cl?"checked":""}></td>
       <td class="col-actions"><button class="btn-x" data-fdel="${i}" title="Remove from this day">✕</button></td>
     </tr>`;}).join("") + `</tbody>`;
@@ -889,23 +1565,58 @@ const LIGHT_DAY = 13, LIGHT_SPACING = 1.5;
 // ponytail: clopen rule — anyone whose previous-day shift ended at/after
 // CLOSE_CUTOFF is a closer and can't start before NO_OPEN_BEFORE the next day.
 // Auto-detected from the previous day in the list; the 🌙 checkbox is the manual override.
-const NO_OPEN_BEFORE = 9, CLOSE_CUTOFF = 21.5;
+const NO_OPEN_BEFORE = 9, CLOSE_CUTOFF = 21.5, MIN_REST_HOURS = 8;
+// Mid-shift only: ALLIE.P and HARMANPREET.K never open and never close.
+// MID_START_MIN is the stated hard rule (no clock-in before 7 AM). MID_END_MAX
+// is my reading of "should be working mid shifts" — off the floor before the
+// closing stretch. Change either number here if the closing end should differ.
+const MID_SHIFT = new Set(["4990", "2088"]);
+const MID_START_MIN = 7, MID_END_MAX = 20;
+const isMid = name => MID_SHIFT.has(idOf(name)||"");
+// Standing clock-in windows: these four always start in the same slot. A single
+// number means an exact time, a pair means anywhere in that range. Availability
+// and the rest rules still win — this only narrows where the optimizer may put
+// them, it never forces someone in earlier than they are allowed to work.
+// A null upper bound means "no later limit" — a floor on the clock-in rather
+// than a fixed slot.
+const START_WINDOW = {
+  "5650":[4,4],       // ANGELA.J    — opens at 4 AM
+  "7355":[4,4],       // OLITHEA.T   — opens at 4 AM
+  "5708":[4,6],       // DAWN.W      — 4 to 6 AM; opens when a 4 AM target needs a second body
+  "8609":[5,6],       // CHRISTINA.M — 5 or 6 AM
+  "9303":[14,null],   // MADISON.A   — cannot start before 2 PM
+};
+const startWindow = name => START_WINDOW[idOf(name)||""] || null;
+const startWindowLabel = w => w[1]==null ? `from ${fmt(w[0])}`
+  : (w[0]===w[1] ? fmt(w[0]) : `${fmt(w[0])}–${fmt(w[1])}`);
+const outsideWindow = (w,start) => start<w[0]-1e-9 || (w[1]!=null && start>w[1]+1e-9);
+const WEEKDAY_SEQ = ["Sat","Sun","Mon","Tue","Wed","Thu","Fri"];
+// The rest rules compare a day with its neighbours in the list. That is only the
+// previous/next calendar day if the list is actually in order — a #d= payload can
+// arrive in any order. Verify the weekdays really are consecutive before trusting
+// the neighbour, otherwise the 8h-rest check silently passes on the wrong day.
+function adjacentShift(name, di, delta){
+  const a=state.days[di], d=state.days[di+delta]; if(!d||!a) return null;
+  const ia=WEEKDAY_SEQ.indexOf(weekdayOf(a.date)), ib=WEEKDAY_SEQ.indexOf(weekdayOf(d.date));
+  if(ia>=0 && ib>=0 && (ib-ia+7)%7 !== (delta>0?1:6)) return null;
+  const id=idOf(name); return id ? d.shifts.find(s=>idOf(s.name)===id)||null : null;
+}
 function closedPrevDay(name, di){
-  const prev = state.days[di-1]; if(!prev) return false;
-  const id = String(name||"").match(/(\d{4,})\s*$/); if(!id) return false;
-  const m = prev.shifts.find(s=>String(s.name||"").trim().endsWith(id[1]));
+  const m=adjacentShift(name,di,-1);
   return !!m && (parseTime(m.end)||0) >= CLOSE_CUTOFF;
 }
 let preOptimize = null;
 function optimizeDay(di){
   const day = state.days[di];
   const all=[];
-  day.shifts.forEach((s,i)=>{ const a=parseTime(s.start), b=parseTime(s.end);
-    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am||MORNING.has(idOf(s.name)||""), cl:!!s.cl }); });
+  day.shifts.forEach((s,i)=>{ if(s.training) return; const a=parseTime(s.start), b=parseTime(s.end);
+    if(a!=null && b!=null && b>a) all.push({ i, start:a, len:b-a, dm:!!s.dm, am:!!s.am||MORNING.has(idOf(s.name)||""), cl:!!s.cl, locked:!!s.locked }); });
   if(all.length<2) return null;
 
   const sph = 2, n = (CLOSE-OPEN)*sph;                    // 30-min slots
   const h2i = h => Math.round((h-OPEN)*sph);
+  const h2iLo = h => Math.ceil((h-OPEN)*sph-1e-9);        // availability/rest starts round inward
+  const h2iEnd = h => Math.floor((h-OPEN)*sph+1e-9);      // availability/rest ends round inward
   // The grid is CLOCK-IN targets: expand {hour: count} into start slots.
   const dem = day.demand || state.demand || {};   // targets are per day (legacy fallback)
   const want = [];
@@ -919,28 +1630,60 @@ function optimizeDay(di){
   // eligible person. Early targets (4A, 5A…) are satisfied first, so when there
   // are more target slots than people, the shortfall lands at the end of the day.
   const offToday = [];
+  const fixed = [];
   const pool = [];
   for(const p of all){
+    if(p.locked){
+      // Explicitly fixed operational shifts override normal placement rules,
+      // while still consuming their real clock-in target capacity.
+      const ws = Math.round((p.start-OPEN)*sph);
+      const len = Math.round(p.len*sph);
+      fixed.push({p, s:ws, len, lo:ws, hi:ws, ws, fix:true, lockReason:"fixed shift"});
+      continue;
+    }
     const av = availFor(day.shifts[p.i].name, day.date);
-    if(av === null){ offToday.push(day.shifts[p.i].name); continue; }  // not available that weekday: left unmoved
+    if(av === null){
+      // Keep an availability-conflict shift unmoved, but reserve its real
+      // clock-in hour so target capacity cannot be filled a second time.
+      offToday.push(day.shifts[p.i].name);
+      const ws = (p.start-OPEN)*sph;
+      const len = p.len*sph;
+      fixed.push({p, s:ws, len, lo:ws, hi:ws, ws, fix:true, lockReason:"availability conflict"});
+      continue;
+    }
     let len = Math.max(1, Math.min(Math.round(p.len*sph), n));
+    const sw = startWindow(day.shifts[p.i].name);              // standing clock-in window
     let min = p.dm ? Math.max(0,h2i(DM_MIN)) : 0;
+    if(isMid(day.shifts[p.i].name)) min = Math.max(min, h2i(MID_START_MIN));   // never opens
+    if(sw) min = Math.max(min, h2i(sw[0]));
+    const prevShift=adjacentShift(day.shifts[p.i].name,di,-1), prevEnd=prevShift&&parseTime(prevShift.end);
+    if(prevEnd!=null) min=Math.max(min, h2iLo(Math.max(OPEN,prevEnd+MIN_REST_HOURS-24)));
     if(p.cl || closedPrevDay(day.shifts[p.i].name, di))
       min = Math.max(min, h2i(NO_OPEN_BEFORE));          // closed yesterday (auto or 🌙) -> can't open
     let end = n;                                          // latest slot the shift may end on
+    if(isMid(day.shifts[p.i].name)) end = Math.min(end, h2iEnd(MID_END_MAX));  // never closes
+    const nextShift=adjacentShift(day.shifts[p.i].name,di,1), nextStart=nextShift&&parseTime(nextShift.start);
+    if(nextStart!=null) end=Math.min(end,h2iEnd(Math.min(CLOSE,nextStart+24-MIN_REST_HOURS)));
+    len=Math.min(len,Math.max(1,end-min));                 // never cross the next-day eight-hour rest boundary
     if(av){
-      min = Math.max(min, Math.max(0, h2i(av[0])));
-      end = Math.min(n, Math.max(min+1, h2i(av[1])));
+      min = Math.max(min, Math.max(0, h2iLo(av[0])));
+      end = Math.min(n, Math.max(min+1, h2iEnd(av[1])));
       len = Math.min(len, end - min);                     // shift longer than the window: trim to fit
     }
     const lo = Math.min(min, n-len);
     let hi = Math.min(n-len, end-len);
     if(p.am) hi = Math.min(hi, Math.max(lo, h2i(12)-1));
+    if(sw && sw[1]!=null) hi = Math.min(hi, Math.max(lo, h2i(sw[1])));   // and no later than the window
     hi = Math.max(hi, lo);
     const ws = Math.max(0, Math.min(h2i(p.start), n));
     pool.push({p, len, lo, hi, ws});
   }
-  const placed = [];
+  const placed = [...fixed];
+  const startHour = slot => Math.floor(OPEN + slot/sph);
+  const hourCount = (slot, exceptQ) => placed.filter(q =>
+    q !== exceptQ && startHour(q.s) === startHour(slot)).length;
+  const hourHasRoom = (slot, exceptQ) =>
+    hourCount(slot, exceptQ) < (dem[startHour(slot)] || 0);
   // Standing rule: these pairs never work at the same time ("7047"=LIAM, "5650"=ANGELA).
   const APART = [["7047","5650"]];
   const apartClash = (nm, s, len, exceptQ) => {
@@ -976,9 +1719,22 @@ function optimizeDay(di){
       mids=rest.sort((a,b)=>a.ws-b.ws);
     }
     const t0 = opener ? opener.lo : 0, t1 = closer ? closer.hi : Math.max(0,n-1);
-    const put=(c,t)=>{ placed.push({p:c.p, s:t, len:c.len, lo:c.lo, hi:c.hi, fix:true});  // roles never gap-pulled
+    const put=(c,t)=>{
+      let assigned=t;
+      const name=day.shifts[c.p.i].name;
+      if(!hourHasRoom(assigned) || apartClash(name, assigned, c.len)){
+        let best=null, bestDistance=1e9;
+        for(const ts of tSlots){
+          if(ts<c.lo || ts>c.hi || !hourHasRoom(ts)) continue;
+          if(apartClash(name, ts, c.len)) continue;
+          const distance=Math.abs(ts-t);
+          if(distance<bestDistance){ bestDistance=distance; best=ts; }
+        }
+        if(best!=null) assigned=best;
+      }
+      placed.push({p:c.p, s:assigned, len:c.len, lo:c.lo, hi:c.hi, fix:true, lockReason:"DM role placement"});
       let bi=-1, bd=1e9;                             // the DM covers the target slot nearest their start
-      want.forEach((w,j)=>{ const d=Math.abs(w-t); if(d<bd){bd=d;bi=j;} });
+      want.forEach((w,j)=>{ const d=Math.abs(w-assigned); if(d<bd){bd=d;bi=j;} });
       if(bi>=0) want.splice(bi,1); };
     if(opener) put(opener, t0);
     mids.forEach((c,j)=>{ const frac=(j+1)/(mids.length+1);
@@ -987,6 +1743,7 @@ function optimizeDay(di){
   }
   want.sort((a,b)=>a-b);
   for(const t of want){
+    if(!hourHasRoom(t)) continue;
     let bi=-1, bd=1e9, bw=1e9;
     floorPool.forEach((c,j)=>{ if(t<c.lo||t>c.hi) return; if(apartClash(day.shifts[c.p.i].name, t, c.len)) return;
       const d=Math.abs(t-c.ws), w=c.hi-c.lo;               // tie-break: tightest window first
@@ -1000,13 +1757,10 @@ function optimizeDay(di){
     const nm = day.shifts[c.p.i].name;
     const s0 = Math.max(c.lo, Math.min(c.ws, c.hi));
     let s = null, bd=1e9;                                    // nearest OPEN target hour, avoiding the partner
-    for(const pass of [0,1]){                                // pass 0: hours with room · pass 1: any target hour
-      for(const ts of tSlots){ if(ts<c.lo||ts>c.hi) continue; if(apartClash(nm, ts, c.len)) continue;
-        if(pass===0){ const cap=dem[Math.floor(OPEN+ts/sph)]||0;
-          if(placed.filter(x=>x.s===ts).length>=cap) continue; }
+    for(const ts of tSlots){                                 // only target hours that still have room
+      if(ts<c.lo||ts>c.hi) continue;
+      if(apartClash(nm, ts, c.len) || !hourHasRoom(ts)) continue;
         const dd=Math.abs(ts-s0); if(dd<bd){bd=dd;s=ts;} }
-      if(s!=null) break;
-    }
     if(s==null){                                             // no target hour fits: nearest legal start
       s=s0;
       if(apartClash(nm, s0, c.len)){
@@ -1045,8 +1799,7 @@ function optimizeDay(di){
       let ns=null;                                           // latest TARGET hour that closes the gap AND still has room
       for(const ts of tSlots){
         if(!(ts>=q.lo && ts<=hiCap && ts<q.s)) continue;
-        const cap = dem[Math.floor(OPEN+ts/sph)]||0;
-        if(placed.filter(x=>x!==q && x.s===ts).length >= cap) continue;   // that hour already hit its target
+        if(!hourHasRoom(ts, q)) continue;                    // that hour already hit its target
         if(ns==null||ts>ns) ns=ts;
       }
       if(ns!=null && !apartClash(day.shifts[q.p.i].name, ns, q.len, q)){ q.s=ns; placed.sort((a,b)=>a.s-b.s); k=0; }   // tiny list; rescan
@@ -1068,6 +1821,7 @@ function optimizeDay(di){
       if(lo2>hi2) return;
       const s2=Math.max(lo2, Math.min(hi2, q.s));
       if(s2===q.s) return;
+      if(!hourHasRoom(s2, q)) return;
       if(apartClash(day.shifts[q.p.i].name, s2, q.len, q)) return;
       const cost=Math.abs(s2-q.s);
       if(!best||cost<best.cost) best={q,s2,cost};
@@ -1089,11 +1843,11 @@ function optimizeDay(di){
   // report target hours that ended up OVER their count (window-locked people)
   const overNotes=[];
   {
-    const bySlot={};
-    placed.forEach(q=>{ (bySlot[q.s]=bySlot[q.s]||[]).push(q); });
+    const byHour={};
+    placed.forEach(q=>{ const h=startHour(q.s); (byHour[h]=byHour[h]||[]).push(q); });
     for(const ts of tSlots){
-      const cap=dem[Math.floor(OPEN+ts/sph)]||0;
-      const ppl=bySlot[ts]||[];
+      const hour=startHour(ts), cap=dem[hour]||0;
+      const ppl=byHour[hour]||[];
       if(ppl.length>cap)
         overNotes.push(fmt(OPEN+ts/sph)+": "+ppl.length+" in vs target "+cap+" — "+
           ppl.map(q=>String(day.shifts[q.p.i].name).split(" ")[0]).join(", ")+
@@ -1108,49 +1862,277 @@ function optimizeDay(di){
     if(gap<=G) continue;
     const nm=day.shifts[q.p.i].name, short=String(nm).split(" ")[0];
     let why;
-    if(q.fix) why="DM role placement";
+    if(q.fix) why=q.lockReason||"fixed placement";
     else {
       const desired=Math.max(Math.min(prevS+G, n-q.len), 0);
       if(apartClash(nm, Math.max(desired,q.lo), q.len, q)) why="keep-apart rule";
-      else if(!tSlots.some(ts=>{ if(ts>Math.min(prevS+G, n-q.len)) return false;
-        const cap=dem[Math.floor(OPEN+ts/sph)]||0; return placed.filter(x=>x!==q&&x.s===ts).length<cap; }))
+      else if(!tSlots.some(ts=> ts<=Math.min(prevS+G, n-q.len) && hourHasRoom(ts, q)))
         why="no open clock-in target within 1½h";
       else {
         const av=availFor(nm, day.date);
-        const avLo=av?Math.max(0,h2i(av[0])):0, dmLo=q.p.dm?h2i(DM_MIN):0;
+        const avLo=av?Math.max(0,h2iLo(av[0])):0, dmLo=q.p.dm?h2i(DM_MIN):0;
         const clLo=(q.p.cl||closedPrevDay(nm,di))?h2i(NO_OPEN_BEFORE):0;
+        const midLo=isMid(nm)?h2i(MID_START_MIN):0;
         why = q.lo<=0 ? "no one available earlier"
-            : (avLo>=dmLo&&avLo>=clLo) ? "availability starts "+fmt(OPEN+avLo/sph)
+            : (avLo>=dmLo&&avLo>=clLo&&avLo>=midLo) ? "availability starts "+fmt(OPEN+avLo/sph)
+            : (midLo>=dmLo&&midLo>=clLo) ? "works mid shifts — no start before "+fmt(MID_START_MIN)
             : (clLo>=dmLo) ? "closed the day before (rest until "+fmt(NO_OPEN_BEFORE)+")"
             : "DM can't start before "+fmt(DM_MIN);
       }
     }
     gapNotes.push(`${fmt(OPEN+prevS/sph)} → ${fmt(OPEN+q.s/sph)} (${short}): ${why}`);
   }
-  placed.forEach(({p,s,len})=>{ day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph); });
+  placed.forEach(({p,s,len,lockReason})=>{
+    if(lockReason==="availability conflict") return;        // truly unchanged, including quarter-hour text
+    day.shifts[p.i].start=fmt(OPEN+s/sph); day.shifts[p.i].end=fmt(OPEN+(s+len)/sph);
+  });
   return {off: offToday, gaps: gapNotes, holes: holeNotes, over: overNotes};
+}
+
+const MIN_OPERATIONAL_COVERAGE = 4, FT_SHIFT_LEN = 8.5;
+function associateRoster(){
+  const roster={};
+  [DEFAULTS,...SEED_DAYS,...state.days].forEach(d=>(d.shifts||[]).forEach(s=>{
+    const id=idOf(s.name); if(id&&!EXCLUDED.has(id)&&!roster[id]) roster[id]=s.name;
+  }));
+  return roster;
+}
+function managerIds(){
+  const ids=new Set();
+  [DEFAULTS,...SEED_DAYS,...state.days].forEach(d=>(d.shifts||[]).forEach(s=>{ if(s.dm){ const id=idOf(s.name); if(id) ids.add(id); } }));
+  return ids;
+}
+function operationalAt(day,t){
+  return day.shifts.filter(s=>!s.training).filter(s=>{
+    const a=parseTime(s.start),b=parseTime(s.end); return a!=null&&b!=null&&a<=t&&b>t;
+  }).length;
+}
+function sparseHalfHours(day){
+  const a=[]; for(let t=OPEN;t<CLOSE;t+=0.5){ const count=operationalAt(day,t); if(count<MIN_OPERATIONAL_COVERAGE) a.push({t,count}); }
+  return a;
+}
+function restAllows(id,di,start,end){
+  const name=(associateRoster()[id]||id), prev=adjacentShift(name,di,-1), next=adjacentShift(name,di,1);
+  const pe=prev&&parseTime(prev.end), ns=next&&parseTime(next.start);
+  if(pe!=null && start+24-pe<MIN_REST_HOURS-1e-9) return false;
+  if(pe!=null && pe>=CLOSE_CUTOFF && start<NO_OPEN_BEFORE) return false; // existing stricter closer rule
+  if(ns!=null && ns+24-end<MIN_REST_HOURS-1e-9) return false;
+  return true;
+}
+function shortageRanges(slots){
+  if(!slots.length) return [];
+  const out=[]; let a=slots[0].t,b=a+0.5;
+  for(let i=1;i<slots.length;i++){
+    if(Math.abs(slots[i].t-b)<1e-9) b+=0.5;
+    else { out.push(fmt(a)+"–"+fmt(b)); a=slots[i].t; b=a+0.5; }
+  }
+  out.push(fmt(a)+"–"+fmt(b)); return out;
+}
+function fillCoverageCore(notes=[]){
+  const roster=associateRoster(), dmIds=managerIds(), additions=[];
+  weekGroups().forEach(days=>{
+    for(const day of days){
+      const di=state.days.indexOf(day); let guard=100;
+      while(guard-->0){
+        const sparse=sparseHalfHours(day); if(!sparse.length) break;
+        const totals=projectedWeekTotals(days); let best=null;
+        for(const [id,name] of Object.entries(roster)){
+          if(day.shifts.some(s=>idOf(s.name)===id) || id==="0889") continue; // training-only Savannah never fills floor coverage
+          const av=availFor(name,day.date); if(!av) continue;               // null or unknown availability is not schedulable
+          const pt=PART_TIME.has(id), cap=pt?PT_MAX_HOURS:FT_MAX_HOURS, remaining=cap-(totals[id]||0);
+          const lengths=[];
+          if(pt){ for(let len=PT_SHIFT_MAX;len>=PT_SHIFT_MIN-1e-9;len-=0.5) if(paidLenH(0,len)<=remaining+1e-9) lengths.push(len); }
+          else if(remaining>=paidLenH(0,FT_SHIFT_LEN)-1e-9) lengths.push(FT_SHIFT_LEN);
+          for(const len of lengths){
+            const lo=Math.max(OPEN,av[0]), hi=Math.min(CLOSE,av[1])-len;
+            for(let start=Math.ceil(lo*2)/2;start<=hi+1e-9;start+=0.5){
+              const end=start+len, isDM=dmIds.has(id);
+              if(isDM&&start<DM_MIN) continue;
+              if(MORNING.has(id)&&start>=12) continue;
+              if(MID_SHIFT.has(id)&&(start<MID_START_MIN||end>MID_END_MAX)) continue;   // mid shifts only
+              const sw=START_WINDOW[id]; if(sw&&outsideWindow(sw,start)) continue;   // standing clock-in window
+              if(!restAllows(id,di,start,end)) continue;
+              const gain=sparse.filter(x=>start<=x.t&&end>x.t).length; if(!gain) continue;
+              const score=gain*100-(totals[id]||0)-start/100;
+              if(!best||score>best.score) best={id,name,start,end,isDM,score};
+            }
+          }
+        }
+        if(!best) break;
+        const shift={name:best.name,start:fmt(best.start),end:fmt(best.end),dm:best.isDM,autoAdded:true,note:"Auto-added for minimum four-person floor coverage"};
+        day.shifts.push(shift); additions.push({day:day.date,name:best.name,start:shift.start,end:shift.end});
+      }
+      const unresolved=sparseHalfHours(day);
+      if(unresolved.length) notes.push((day.date||"?").split("·")[0].trim()+": could not reach four operational associates during "+shortageRanges(unresolved).join(", "));
+    }
+  });
+  return additions;
+}
+/* ---- Budget fill: ADD shifts to spend a week's remaining hours ----
+   Balancing only stretches shifts that already exist, so a week can sit tens of
+   hours under budget with nobody left to extend. This adds new shifts on the
+   days furthest below their target, priority days first, obeying exactly the
+   same rules as coverage fill: availability, weekly cap, 8h rest, the closer
+   rule, DM start floor and the morning-only set.
+
+   Two weeks with the same roster and the same gaps would otherwise get an
+   identical schedule, so ties are broken by a hash of the week key — stable and
+   reproducible, but different from week to week. */
+const hash32 = s => { let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h; };
+// Weighted to matter against the "spread across people" term but stay far below
+// the fit term, so it reshuffles genuinely comparable candidates and never picks
+// a worse-fitting shift.
+const rotation = (days,id) => (hash32(weekKey(days)+"|"+id)%97)/97*5;    // 0 – 5
+function thinnessAt(day,t){ return 1/(1+operationalAt(day,t)); }          // emptier hour = worth more
+// Everyone still on staff is fair game. Departures are tracked explicitly in
+// EXCLUDED and associateRoster() already drops them — absence from one week's
+// Schedule Editor export means only that the export didn't list them, not that
+// they left. Anyone NOT on the week's export is still schedulable; the report
+// just says so, because putting a name on the schedule who wasn't on the
+// printout is worth a second look.
+function onWeekExport(days){
+  const ok=new Set();
+  days.forEach(d=>{
+    Object.keys(d.reportedTotals||{}).forEach(id=>ok.add(id));
+    d.shifts.forEach(s=>{ const i=idOf(s.name); if(i) ok.add(i); });
+  });
+  return ok;
+}
+function fillBudgetCore(notes=[]){
+  const dmIds=managerIds(), additions=[];
+  weekGroups().forEach(days=>{
+    const roster=associateRoster(), onExport=onWeekExport(days);
+    const B=budgetOf(days);
+    if(B==null){ notes.push(weekLabel(days)+": no budget set — nothing to fill toward."); return; }
+    const exhausted=new Set();
+    const MIN_ADD = paidLenH(0, PT_SHIFT_MIN);        // smallest shift anyone can be given
+    // One shift per associate per day is the hard ceiling on how many can ever be
+    // added, so this can never cut a fillable week short.
+    let guard = days.length * Object.keys(roster).length + 1, why="budget met";
+    while(guard-->0){
+      const shortfall = B - budgetSpent(days);
+      if(shortfall < 0.5){ why="budget met"; break; }
+      if(shortfall < MIN_ADD){ why=`only ${Math.round(shortfall*4)/4}h left, and the shortest shift anyone can be given is ${MIN_ADD}h`; break; }
+      why="no one left who is available, under their cap and legal to add";
+      const targets = dayTargets(days, null);
+      // neediest day first, priority days outranking Wed/Thu
+      const day = days.filter(d=>!exhausted.has(d) && targets.has(d) && targets.get(d)-dayHours(d) >= 0.5)
+        .sort((a,b)=> (priorityOf(b)-priorityOf(a)) || ((targets.get(b)-dayHours(b))-(targets.get(a)-dayHours(a))))[0];
+      if(!day) break;
+      const di=state.days.indexOf(day), gap=targets.get(day)-dayHours(day);
+      const totals=projectedWeekTotals(days);
+      const daysWorked={}; days.forEach(d=>d.shifts.forEach(s=>{ const i=idOf(s.name); if(i) daysWorked[i]=(daysWorked[i]||0)+1; }));
+      let best=null;
+      for(const [id,name] of Object.entries(roster)){
+        if(day.shifts.some(s=>idOf(s.name)===id) || id==="0889") continue;   // already on, or training-only
+        const av=availFor(name,day.date); if(!av) continue;
+        const pt=PART_TIME.has(id), cap=pt?PT_MAX_HOURS:FT_MAX_HOURS, remaining=cap-(totals[id]||0);
+        const lengths=[];
+        if(pt){ for(let len=PT_SHIFT_MAX;len>=PT_SHIFT_MIN-1e-9;len-=0.5) lengths.push(len); }
+        else lengths.push(FT_SHIFT_LEN);
+        for(const len of lengths){
+          const paid=paidLenH(0,len);
+          if(paid>remaining+1e-9) continue;                 // would break the weekly cap
+          if(paid>shortfall+0.5) continue;                  // would overshoot the week budget
+          const lo=Math.max(OPEN,av[0]), hi=Math.min(CLOSE,av[1])-len;
+          for(let start=Math.ceil(lo*2)/2;start<=hi+1e-9;start+=0.5){
+            const end=start+len, isDM=dmIds.has(id);
+            if(isDM&&start<DM_MIN) continue;
+            if(MORNING.has(id)&&start>=12) continue;
+            if(MID_SHIFT.has(id)&&(start<MID_START_MIN||end>MID_END_MAX)) continue;   // mid shifts only
+            const sw=START_WINDOW[id]; if(sw&&outsideWindow(sw,start)) continue;   // standing clock-in window
+            if(!restAllows(id,di,start,end)) continue;
+            let thin=0; for(let t=start;t<end;t+=0.5) thin+=thinnessAt(day,t);
+            const score = Math.min(paid,gap)*100          // hours that actually count toward the gap
+                        - Math.max(0,paid-gap)*40         // don't blow past the day's target
+                        + thin*6                          // land where the floor is thinnest
+                        - (daysWorked[id]||0)*8           // spread across people
+                        - (totals[id]||0)*0.5             // lowest weekly total first
+                        + rotation(days,id)               // per-week tiebreak
+                        - start/1000;
+            if(!best||score>best.score) best={id,name,start,end,isDM,paid,score};
+          }
+        }
+      }
+      if(!best){ exhausted.add(day); continue; }
+      day.shifts.push({name:best.name,start:fmt(best.start),end:fmt(best.end),dm:best.isDM,
+        autoAdded:true,note:"Auto-added to spend the week's hours budget"});
+      additions.push({week:weekLabel(days),day:day.date,name:best.name,start:fmt(best.start),end:fmt(best.end),
+        paid:best.paid,offExport:!onExport.has(best.id)});
+    }
+    const left=Math.round((B-budgetSpent(days))*4)/4;
+    if(guard<0) why="hit the safety limit on how many shifts one run may add — run it again";
+    if(left>=0.5) notes.push(`${weekLabel(days)}: ${left}h still unplaced — ${why}.`);
+  });
+  return additions;
+}
+function fillBudgetHours(){
+  if(!weekGroups().some(g=>budgetOf(g)!=null)){ alert("Set a week budget first — this fills a week up to its budget."); return; }
+  if(!budgetGuard()) return;
+  if(!confirm(`Add new shifts until each week reaches its budget?\nSame rules as coverage fill: availability, ${FT_MAX_HOURS}h/${PT_MAX_HOURS}h caps, ${MIN_REST_HOURS}h between shifts, PT shifts ${PT_SHIFT_MIN}–${PT_SHIFT_MAX}h.\nNeediest day first, Sat/Sun/Mon/Tue/Fri before Wed/Thu.\n\n${weekGroups().map(budgetSummary).join("\n")}`)) return;
+  preOptimize={week:structuredClone(state.days)};
+  const notes=[],added=fillBudgetCore(notes); save(); renderAll();
+  document.getElementById("undoOpt").style.display="";
+  const byWeek={}; added.forEach(a=>(byWeek[a.week]=byWeek[a.week]||[]).push(a));
+  report("Fill to budget", [
+    ...Object.entries(byWeek).map(([wk,list])=>({
+      label:`${wk} — added ${list.length} shift(s), ${Math.round(list.reduce((t,a)=>t+a.paid,0)*4)/4}h`, tone:"ok",
+      items:list.map(a=>`${(a.day||"").split(",")[0]}: ${a.name} ${a.start}–${a.end}${a.offExport?"  ⚠ not on this week's Schedule Editor export":""}`)})),
+    {label:"⚠ Confirm with the associate before posting", tone:"danger", items:confirmList()},
+    {label:"Worth a second look", tone:"warn",
+      items:[...new Set(added.filter(a=>a.offExport).map(a=>a.name))].map(n=>`${n} is on staff but wasn't on this week's export — check they're actually available before posting.`)},
+    {label:"Result", tone:"info", items:added.length?weekGroups().map(budgetSummary):["No legal shift could be added."]},
+    {label:"Still unplaced", tone:"warn", items:notes}
+  ]);
+}
+function fillSparseCoverage(){
+  if(!confirm(`Add available, unscheduled associates wherever floor coverage is below ${MIN_OPERATIONAL_COVERAGE}?\nFT cap ${FT_MAX_HOURS}h, PT cap ${PT_MAX_HOURS}h, at least ${MIN_REST_HOURS}h between shifts. Reported hours from other workgroups count toward the caps.`)) return;
+  preOptimize={week:structuredClone(state.days)};
+  const notes=[],added=fillCoverageCore(notes); save(); renderAll();
+  document.getElementById("undoOpt").style.display="";
+  report("Fill sparse coverage", [
+    {label:`Added ${added.length} coverage shift(s)`, tone:added.length?"ok":(notes.length?"warn":"info"),
+      items:added.length?added.map(x=>`${x.day.split(",")[0]}: ${x.name} ${x.start}–${x.end}`):["No legal shifts could be added."]},
+    {label:"⚠ Confirm with the associate before posting", tone:"danger", items:confirmList()},
+    {label:"Remaining gaps", tone:"warn", items:notes}
+  ]);
 }
 function optimizeStarts(){
   const day = cur();
   if(!confirm(`Re-arrange start times for ${day.date||"this day"}?\nEach shift keeps its length; ends move with the start.`)) return;
   preOptimize = { i: state.active, shifts: structuredClone(day.shifts) };
   const r = optimizeDay(state.active);
-  if(r===null){ preOptimize=null; alert("Need at least 2 valid shifts to optimize."); return; }
-  if(r.off.length)
-    alert(`Not available on ${weekdayOf(day.date)||"this day"} (left unchanged — consider removing them):\n` + r.off.join(", "));
-  if(r.gaps.length)
-    alert("Clock-in gaps over 1\u00bd h that the rules wouldn't let me close:\n" + r.gaps.join("\n"));
-  if(r.holes.length)
-    alert("⚠ NO ONE ON THE FLOOR during: " + r.holes.join(", ") + "\n(no shift can legally cover it — check availability or add someone)");
-  if(r.over.length)
-    alert("Target overfilled (people who can't legally start any later):\n" + r.over.join("\n"));
+  const dayLabel=(day.date||"this day").split(",")[0];
+  if(r===null){ preOptimize=null; report(`Optimize ${dayLabel}`, [
+    {label:"Cannot optimize", tone:"danger", items:["Need at least 2 valid shifts to optimize."]}
+  ]); return; }
+  // Where this one day sits against its share of the week's hours.
+  const group = weekGroups().find(g=>g.includes(day)) || state.days;
+  const tgt = dayTargets(group, null).get(day);
+  const dayLine=`${dayLabel}: ${dayHours(day)}h scheduled`
+    + (day.demandHours!=null ? ` · demand ${day.demandHours}h` : "")
+    + (tgt!=null ? ` · target ${Math.round(tgt*4)/4}h (${(dayHours(day)-tgt>=0?"+":"")}${Math.round((dayHours(day)-tgt)*4)/4}h)` : "");
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
+  const warned=r.off.length||r.gaps.length||r.holes.length||r.over.length;
+  report(`Optimize ${dayLabel}`, [
+    {label:`Not available on ${weekdayOf(day.date)||"this day"} — left unchanged; consider removing`, tone:"warn", items:r.off},
+    {label:"Clock-in gaps over 1½ h", tone:"warn", items:r.gaps},
+    {label:"No one on the floor — check availability or add someone", tone:"danger", items:r.holes},
+    {label:"Target overfilled — people could not legally start later", tone:"warn", items:r.over},
+    {label:"Target hours the day cannot fill", tone:"warn", items:underfilledTargets(day)},
+    {label:"Result", tone:"ok", items:warned?[]:["Start times optimized with no warnings."]},
+    {label:"Hours", tone:"info", items:[dayLine, `Week: ${budgetSummary(group)}`,
+      budgetOf(group)!=null?"Start times only moved here — run ⚖ Balance or ⚙ Optimize week to actually place budget hours.":null]}
+  ]);
 }
 function optimizeWeek(){
-  if(!confirm(`Do the whole week?\n1) Balance part-timer hours (6–7½h shifts, ${PT_MAX_HOURS}h/week cap, demand+${WEEK_BUFFER}h per day)\n2) Optimize all ${state.days.length} days in order\nFull-timers keep their hours. One Undo restores everything.`)) return;
+  if(!budgetGuard()) return;
+  if(!confirm(`Optimize all loaded weeks?\n1) Balance part-timer hours (6–8½h shifts, ${PT_MAX_HOURS}h cap in each Saturday-Friday week) so ${aimLine()}\n2) Optimize all ${state.days.length} days in order\nFull-timers keep their hours. One Undo restores everything.\n\n${weekGroups().map(budgetSummary).join("\n")}`)) return;
   preOptimize = { week: structuredClone(state.days) };
   const notes=[];
+  const added=fillCoverageCore(notes);
+  if(added.length) notes.push("Added "+added.length+" coverage shift(s) before optimization.");
   balanceCore(notes);
   state.days.forEach((d,i)=>{
     const r = optimizeDay(i), lbl = (d.date||"?").split(",")[0];
@@ -1162,7 +2144,15 @@ function optimizeWeek(){
   });
   save(); renderAll();
   document.getElementById("undoOpt").style.display="";
-  alert(notes.length ? "Week done — check these:\n"+notes.join("\n") : "Week done ✓ — every day balanced and optimized.");
+  const info=notes.filter(n=>/^Added \d+ coverage shift/.test(n));
+  const danger=notes.filter(n=>n.includes("NO ONE ON FLOOR")||n.includes("skipped"));
+  const warnings=notes.filter(n=>!info.includes(n)&&!danger.includes(n));
+  report("Optimize week", [
+    {label:"Complete", tone:"ok", items:notes.length?[]:["Week done ✓ — every day balanced and optimized."]},
+    {label:"Changes", tone:"info", items:info},
+    {label:"Warnings", tone:"warn", items:warnings},
+    {label:"Needs attention", tone:"danger", items:danger}
+  ]);
 }
 function undoOptimize(){
   if(!preOptimize) return;
@@ -1178,10 +2168,34 @@ function renderDays(){
   sel.innerHTML = state.days.map((d,i)=>`<option value="${i}" ${i===state.active?"selected":""}>${(d.date||"Untitled day").replace(/</g,"&lt;")}</option>`).join("");
   document.getElementById("delDay").disabled = state.days.length<=1;
 }
-function renderAll(){ renderDays(); renderEditor(); renderReport(); renderOptimize(); renderWeekBar(); renderWeekHours(); }
+function renderAll(){ renderDays(); renderEditor(); renderReport(); renderOptimize(); renderWeekBar(); renderBudgetLine(); renderConfirmLine(); renderWeekStats(); renderWeekHours(); }
 
 // events
+document.getElementById("dismissReport").addEventListener("click", ()=>document.getElementById("resultPanel").hidden=true);
+document.getElementById("copyReport").addEventListener("click", async e=>{
+  const text=document.getElementById("resultPanel")._reportText||"";
+  const fallback=()=>{ const t=document.createElement("textarea"); t.value=text; document.body.appendChild(t); t.select();
+    const ok=document.execCommand("copy"); t.remove(); return ok; };
+  let ok=false;
+  try { if(navigator.clipboard) { await navigator.clipboard.writeText(text); ok=true; } else ok=fallback(); }
+  catch(err){ ok=fallback(); }
+  e.currentTarget.textContent=ok?"Copied":"Copy failed";
+  setTimeout(()=>e.currentTarget.textContent="Copy", 1500);
+});
+document.getElementById("resultPanel").addEventListener("click", e=>{
+  const b=e.target.closest("[data-report-day]"); if(!b) return;
+  state.active=+b.dataset.reportDay; renderAll();
+});
 document.getElementById("editBody").addEventListener("input", e=>{
+  if(e.target.dataset.k==="reqtext"){
+    const i=+e.target.dataset.i, sh=cur().shifts[i];
+    sh.request = sh.request || {};
+    sh.request.text = e.target.value;
+    const p = parseRequest(e.target.value);
+    if(p){ sh.request.start=p.start; sh.request.end=p.end; } else { delete sh.request.start; delete sh.request.end; }
+    sh.request.status = "pending";
+    save(); return;                       // don't re-render mid-typing
+  }
   const i=e.target.dataset.i, k=e.target.dataset.k;
   if(i==null) return;
   cur().shifts[i][k] = e.target.type==="checkbox" ? e.target.checked : e.target.value;
@@ -1200,6 +2214,19 @@ document.getElementById("cov").addEventListener("input", e=>{
   refreshSched();                            // recolor without rebuilding the inputs (keeps focus)
 });
 document.getElementById("editBody").addEventListener("click", e=>{
+  const yes=e.target.dataset.reqyes, no=e.target.dataset.reqno, clr=e.target.dataset.reqclear;
+  if(yes!=null || no!=null){
+    const i=+(yes ?? no), di=state.active, s=cur().shifts[i];
+    const breaches = decideRequest(di, i, yes!=null ? "approved" : "declined");
+    save(); renderAll();
+    const asked = s.request.wasStart ? `${s.request.wasStart}–${s.request.wasEnd} → ${s.start}–${s.end}` : `${s.start}–${s.end}`;
+    report("Change request — "+(yes!=null?"approved":"declined"), [
+      {label:s.name, tone:yes!=null?"ok":"info", items:[`${(cur().date||"?").split(",")[0]}: ${asked}`]},
+      {label:"Granting this breaks a rule — your call, but worth knowing", tone:"danger", items:breaches}
+    ]);
+    return;
+  }
+  if(clr!=null){ delete cur().shifts[+clr].request; save(); renderAll(); return; }
   const d=e.target.dataset.del;
   if(d==null) return;
   cur().shifts.splice(+d,1); renderAll();
@@ -1212,6 +2239,7 @@ document.getElementById("addBtn").addEventListener("click", ()=>{
 });
 document.getElementById("optBtn").addEventListener("click", optimizeStarts);
 document.getElementById("weekBtn").addEventListener("click", optimizeWeek);
+document.getElementById("fillBtn").addEventListener("click", fillSparseCoverage);
 document.getElementById("undoOpt").addEventListener("click", undoOptimize);
 document.getElementById("flags").addEventListener("change", e=>{
   const i=e.target.dataset.fi, k=e.target.dataset.fk;
@@ -1219,6 +2247,10 @@ document.getElementById("flags").addEventListener("change", e=>{
   cur().shifts[i][k]=e.target.checked; save(); renderAll();
 });
 document.getElementById("flags").addEventListener("click", e=>{
+  const ack=e.target.dataset.ack;
+  if(ack!=null){ const sh=cur().shifts[+ack]; delete sh.autoAdded;
+    if(/^Auto-added/.test(sh.note||"")) delete sh.note;   // only the marker, never a note you typed
+    save(); renderAll(); return; }
   const d=e.target.dataset.fdel;
   if(d==null) return;
   cur().shifts.splice(+d,1); save(); renderAll();
@@ -1255,12 +2287,44 @@ document.getElementById("resetBtn").addEventListener("click", ()=>{
 document.getElementById("demandHrs").addEventListener("input", e=>{
   const v=e.target.value.trim();
   if(v==="") delete cur().demandHours; else cur().demandHours=+v||0;
-  renderWeekBar(); localStorage.setItem(KEY, JSON.stringify(state));
+  renderWeekBar(); renderBudgetLine(); renderWeekStats(); localStorage.setItem(KEY, JSON.stringify(state));
+});
+const finiteHours = v => { const n=Number(v); return Number.isFinite(n) && n>=0 ? n : null; };
+document.getElementById("budgetHrs").addEventListener("input", e=>{
+  const v=e.target.value.trim();
+  // All three controls act on the week the selected day belongs to, never on
+  // every loaded week — two weeks have different demand and different budgets.
+  if(v===""){ setBudgetFor(activeWeek(), null); }
+  else { const n=finiteHours(v); if(n===null) return; setBudgetFor(activeWeek(), n); }
+  renderWeekBar(); renderBudgetLine(); renderWeekStats(); localStorage.setItem(KEY, JSON.stringify(state));
+});
+document.getElementById("applyExtra").addEventListener("click", ()=>{
+  const n=finiteHours(document.getElementById("addHrs").value.trim());
+  if(n===null){ alert("Type how many extra hours you have as a number, e.g. 100."); return; }
+  const group = activeWeek();
+  setBudgetFor(group, Math.round((budgetSpent(group) + n)*4)/4);
+  save(); renderAll();
+});
+document.getElementById("clearBudget").addEventListener("click", ()=>{
+  setBudgetFor(activeWeek(), null); document.getElementById("addHrs").value="";
+  save(); renderAll();
 });
 document.getElementById("weekBar").addEventListener("click", e=>{
   const b=e.target.closest("[data-day]"); if(!b) return; state.active=+b.dataset.day; renderAll();
 });
+document.getElementById("balanceBtn").title=`Extend/trim part-timers toward the week target (no budget: demand + ${WEEK_BUFFER}h per day; PT shifts ${PT_SHIFT_MIN}–${PT_SHIFT_MAX}h, ≤${PT_MAX_HOURS}h/week). Full-timers never change.`;
 document.getElementById("balanceBtn").addEventListener("click", balanceHours);
+document.getElementById("fillBudgetBtn").addEventListener("click", fillBudgetHours);
+document.getElementById("reqReportBtn").addEventListener("click", ()=>{
+  const g=changeRequestReport();
+  report("Change requests", [
+    {label:"Approved", tone:"ok", items:g.approved},
+    {label:"Declined", tone:"info", items:g.declined},
+    {label:"Still waiting on your decision", tone:"warn", items:g.pending},
+    {label:"Nothing yet", tone:"info",
+      items:(g.approved.length||g.declined.length||g.pending.length)?[]:["No change requests written in. Print the draft, let people fill in the time they need, then type them into the ✍ Change request column."]}
+  ]);
+});
 document.getElementById("copyTargets").addEventListener("click", ()=>{
   if(!confirm("Copy THIS day's clock-in targets to every day in the list?")) return;
   const src={...(cur().demand||{})};
@@ -1283,12 +2347,51 @@ document.getElementById("delDay").addEventListener("click", ()=>{
   if(confirm("Delete this day?")){ state.days.splice(state.active,1); state.active=Math.max(0,state.active-1); renderAll(); }
 });
 
-function printAs(orient){
-  document.body.classList.remove("printing-week");
-  document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
-  window.print();
+/* ---- Shrink-to-fit printing ----
+   The roster changes week to week, so "one page" cannot be a fixed font size.
+   Clone what will actually print into an off-screen box the exact width of the
+   paper, measure it, and scale so the tallest page fits. Scale is capped at 1
+   (never blow content up) and floored, because past a point shrinking stops
+   being readable and a second sheet is the better answer. */
+const PX_PER_MM = 96/25.4, PRINT_MARGIN_MM = 11, MIN_PRINT_SCALE = 0.55;
+const paperMM = orient => orient==="landscape" ? {w:279.4,h:215.9} : {w:215.9,h:279.4};
+function measureBox(){ let b=document.getElementById("measure");
+  if(!b){ b=document.createElement("div"); b.id="measure"; document.body.appendChild(b); } return b; }
+// Returns the scale that makes `nodes` (one per sheet) each fit one page.
+function fitScale(orient, nodes){
+  const p=paperMM(orient);
+  const availW=(p.w-2*PRINT_MARGIN_MM)*PX_PER_MM, availH=(p.h-2*PRINT_MARGIN_MM)*PX_PER_MM;
+  const box=measureBox(); box.style.width=availW+"px";
+  let worst=0;
+  for(const n of nodes){
+    box.innerHTML=""; box.appendChild(n.cloneNode(true));
+    worst=Math.max(worst, box.scrollHeight);
+  }
+  box.innerHTML="";
+  if(!worst) return 1;
+  return Math.max(MIN_PRINT_SCALE, Math.min(1, (availH/worst)*0.985));   // 1.5% safety margin
 }
-function printWeek(orient){
+function applyFit(orient, nodes){
+  const s=fitScale(orient, nodes);
+  document.documentElement.style.setProperty("--print-scale", s.toFixed(3));
+  // margin:0 leaves the browser no room to stamp its own header/footer (the
+  // file:// URL, date and page number). The white space comes back as padding
+  // inside the page instead — see .page/.daypage in the print stylesheet.
+  document.getElementById("pageOrient").textContent=`@page{size:${orient};margin:0;}`;
+  return s;
+}
+function printAs(orient, isFinal){
+  document.body.classList.remove("printing-week");
+  document.body.classList.toggle("printing-final", !!isFinal);
+  const s=applyFit(orient, [document.querySelector(".page")]);
+  if(s<=MIN_PRINT_SCALE+1e-6)
+    report("Print day", [{label:"Too much for one sheet", tone:"warn", items:[
+      `This day needs shrinking past ${Math.round(MIN_PRINT_SCALE*100)}% to fit a single ${orient} page, which stops being readable. Printed at ${Math.round(s*100)}% — try ${orient==="portrait"?"landscape":"portrait"}, or let it run to two sheets.`]}]);
+  window.print();
+  document.body.classList.remove("printing-final");
+}
+function printWeek(orient, isFinal){
+  document.body.classList.toggle("printing-final", !!isFinal);
   const wp = document.getElementById("weekPrint");
   wp.innerHTML = state.days.map(d=>{
     const { people } = compute(d.shifts);
@@ -1302,13 +2405,16 @@ function printWeek(orient){
     </section>`;
   }).join("");
   document.body.classList.add("printing-week");
-  document.getElementById("pageOrient").textContent = `@page{size:${orient};margin:8mm;}`;
+  // One scale for every day sheet, chosen by the busiest day, so the pages of a
+  // week look like a set rather than each being a different size.
+  applyFit(orient, [...wp.querySelectorAll(".daypage")]);
   window.print();
+  document.body.classList.remove("printing-final");
 }
 
 // ---- prefill from a #d= link (Claude parses a schedule image in chat, no API) ----
 // Payload: base64url JSON {date?, open?, demand?[], employees[...]} for one day,
-// or {days:[{date, employees:[{name,start,end,dm?,morning?,cl?}]}, ...]} for a whole week.
+// or {days:[{date, employees:[{name,start,end,dm?,morning?,cl?,locked?,training?,note?}]}, ...]} for a whole week.
 (function(){
   const m=location.hash.match(/[#&]d=([A-Za-z0-9_-]+=*)/); if(!m) return;
   try{
@@ -1318,7 +2424,7 @@ function printWeek(orient){
     let first = -1;
     for(const dd of dayList){
       const date = dd.date||"Imported day";
-      const shifts = (dd.employees||[]).filter(e=>!EXCLUDED.has(idOf(e.name)||"")).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl }));
+      const shifts = (dd.employees||[]).filter(e=>!EXCLUDED.has(idOf(e.name)||"")).map(e=>({ name:e.name||"?", start:fmt(e.start), end:fmt(e.end), dm:!!e.dm, am:!!e.morning, cl:!!e.cl, locked:!!e.locked, training:!!e.training, note:e.note||"" }));
       if(!shifts.length) continue;
       let i=state.days.findIndex(x=>x.date===date);      // re-import same day -> replace, no dupes
       if(i<0){ state.days.push({date, shifts}); i=state.days.length-1; } else state.days[i].shifts=shifts;
@@ -1327,12 +2433,37 @@ function printWeek(orient){
       const dayObj=state.days[i];
       if(Object.keys(tgt).length) dayObj.demand=tgt;
       else if(!dayObj.demand || !Object.keys(dayObj.demand).length) dayObj.demand={...DEFAULT_TARGETS};
+      // Per-day demand HOURS from the Schedule Editor header (distinct from
+      // `demand`, which is the hourly clock-in target map).
+      if(dd.demandHours!=null) dayObj.demandHours=+dd.demandHours||0;
       if(first<0) first=i;
     }
     if(Array.isArray(d.days)){                         // a week import replaces the list: exactly one week
       const keep=new Set(dayList.map(x=>x.date||"Imported day"));
       state.days=state.days.filter(x=>keep.has(x.date));
     }
+    const reportedByWeek = d.reportedTotalsByWeek ||
+      (d.reportedTotals && dayList[0] ? {[dayList[0].date||"Imported day"]:d.reportedTotals} : {});
+    Object.entries(reportedByWeek).forEach(([weekStart,reported])=>{
+      const si=state.days.findIndex(x=>x.date===weekStart); if(si<0) return;
+      const days=[];
+      for(let i=si;i<state.days.length;i++){
+        if(i>si && weekdayOf(state.days[i].date)==="Sat") break;
+        days.push(state.days[i]);
+      }
+      const visible=weekTotals(days), external={};
+      Object.entries(reported||{}).forEach(([id,h])=>external[id]=Math.max(0,(+h||0)-(visible[id]||0)));
+      state.days[si].reportedTotals={...reported};
+      state.days[si].externalHours=external;
+    });
+    // A week import replaces the whole schedule, so it must also replace the
+    // budgets — otherwise a budgetless week silently inherits the previous one's.
+    // budgetByWeek in the payload wins; a single budgetHours applies to every
+    // week the payload brought in.
+    if(Array.isArray(d.days)) delete state.budgetHours;   // days were rebuilt; budgets ride on them
+    const byWeek = d.budgetByWeek && typeof d.budgetByWeek==="object" ? d.budgetByWeek : null;
+    if(byWeek) weekGroups().forEach(g=>{ const v=byWeek[weekKey(g)]; if(Number.isFinite(+v)) setBudgetFor(g, +v); });
+    else if(Number.isFinite(+d.budgetHours)) weekGroups().forEach(g=>setBudgetFor(g, +d.budgetHours));
     if(first>=0) state.active=Math.max(0, state.days.findIndex(x=>x.date===(dayList[0].date||"Imported day")));
     save();
     history.replaceState(null,"",location.pathname+"#schedule");
