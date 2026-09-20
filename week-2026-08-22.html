@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Week of Sat 22 Aug 2026 (OMNI FOM), transcribed from
+     /home/frost/Downloads/Schedule Editor.pdf on 2026-08-02.
+     Loads all 7 days into the dashboard, replacing the currently displayed week.
+     The older 25 July loader remains available in week.html. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Load week · 22 Aug 2026</title>
+  <script>
+    const schedule = {
+      reportedTotals: {
+        "9303":27, "1256":12, "9750":37.5, "6428":20, "7047":27,
+        "3503":37.5, "0889":40, "5650":37.5, "6547":26.5, "3450":25,
+        "2088":27.25, "2226":38.5, "4990":27.75, "1853":18, "1787":37.5,
+        "8836":27.75, "4020":27, "9488":27.25, "2786":28.25, "7355":37.5,
+        "5708":37.5, "8609":0, "3098":0, "0757":0
+      },
+      days: [
+        {
+          date: "Saturday, 22 August 2026 · OMNI FOM",
+          employees: [
+            { name: "AUSTIN.B 1256", start: 13, end: 19.5 },
+            { name: "GABRIELLE.F 9750", start: 7, end: 15.5 },
+            { name: "COLIN.F 6428", start: 5, end: 13.5 },
+            { name: "LIAM.F 7047", start: 5, end: 9.75 },
+            { name: "CHEYANNE.H 3503", start: 13.5, end: 22, dm: true },
+            { name: "ANGELA.J 5650", start: 4, end: 12.5 },
+            { name: "ANJALI.J 3450", start: 14.5, end: 21.25 },
+            { name: "HARMANPREET.K 2088", start: 11, end: 16.5 },
+            { name: "ANNIKA.N 2226", start: 12, end: 20 },
+            { name: "ALLIE.P 4990", start: 10, end: 14.5 },
+            { name: "KEITH.S 8836", start: 16, end: 20 },
+            { name: "HAYDEN.S 4020", start: 6, end: 10.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 8, end: 12.25 },
+            { name: "TRISHA.T 2786", start: 17.25, end: 22 },
+            { name: "DAWN.W 5708", start: 4, end: 12.5 }
+          ]
+        },
+        {
+          date: "Sunday, 23 August 2026 · OMNI FOM",
+          employees: [
+            { name: "AUSTIN.B 1256", start: 8, end: 14.75 },
+            { name: "COLIN.F 6428", start: 5, end: 11.75 },
+            { name: "LIAM.F 7047", start: 5, end: 11 },
+            { name: "CHEYANNE.H 3503", start: 7, end: 15.5, dm: true },
+            { name: "ANGELA.J 5650", start: 4, end: 12.5 },
+            { name: "HARMANPREET.K 2088", start: 12.5, end: 19.5 },
+            { name: "ALLIE.P 4990", start: 10.5, end: 19 },
+            { name: "RINKU.R 1853", start: 15, end: 22 },
+            { name: "CAITLYN.R 1787", start: 9.5, end: 18 },
+            { name: "KEITH.S 8836", start: 14.5, end: 22 },
+            { name: "HAYDEN.S 4020", start: 6, end: 14.25 },
+            { name: "GURSHARANDEEP.S 9488", start: 8, end: 16 },
+            { name: "DAWN.W 5708", start: 4, end: 12.5 }
+          ]
+        },
+        {
+          date: "Monday, 24 August 2026 · OMNI FOM",
+          employees: [
+            { name: "MADISON.A 9303", start: 14, end: 22 },
+            { name: "CHEYANNE.H 3503", start: 13.5, end: 22, dm: true },
+            { name: "SAVANNAH.H 0889", start: 5, end: 14, dm: true, locked: true, training: true, note: "Online manager training - not floor coverage" },
+            { name: "RYAN.J 6547", start: 6, end: 12 },
+            { name: "ANJALI.J 3450", start: 8, end: 16.25 },
+            { name: "HARMANPREET.K 2088", start: 11, end: 16.5 },
+            { name: "ANNIKA.N 2226", start: 4, end: 12.5 },
+            { name: "RINKU.R 1853", start: 7, end: 13.75 },
+            { name: "CAITLYN.R 1787", start: 9, end: 17.5 },
+            { name: "TRISHA.T 2786", start: 12, end: 20.5 },
+            { name: "OLITHEA.T 7355", start: 4, end: 12.5 },
+            { name: "DAWN.W 5708", start: 5, end: 13.5 }
+          ]
+        },
+        {
+          date: "Tuesday, 25 August 2026 · OMNI FOM",
+          employees: [
+            { name: "MADISON.A 9303", start: 14.5, end: 22 },
+            { name: "GABRIELLE.F 9750", start: 4, end: 12.5 },
+            { name: "LIAM.F 7047", start: 5, end: 11.5 },
+            { name: "CHEYANNE.H 3503", start: 12.5, end: 21, dm: true },
+            { name: "SAVANNAH.H 0889", start: 5, end: 14, dm: true, locked: true, training: true, note: "Online manager training - not floor coverage" },
+            { name: "RYAN.J 6547", start: 5, end: 10.5 },
+            { name: "ANJALI.J 3450", start: 8, end: 13.75 },
+            { name: "ALLIE.P 4990", start: 11, end: 17.5 },
+            { name: "KEITH.S 8836", start: 9, end: 15.5 },
+            { name: "HAYDEN.S 4020", start: 6, end: 12 },
+            { name: "TRISHA.T 2786", start: 7, end: 12.5 },
+            { name: "OLITHEA.T 7355", start: 4, end: 12.5 }
+          ]
+        },
+        {
+          date: "Wednesday, 26 August 2026 · OMNI FOM",
+          employees: [
+            { name: "MADISON.A 9303", start: 14, end: 22 },
+            { name: "GABRIELLE.F 9750", start: 5, end: 13.5 },
+            { name: "COLIN.F 6428", start: 6, end: 12.75 },
+            { name: "LIAM.F 7047", start: 7, end: 12.75 },
+            { name: "SAVANNAH.H 0889", start: 5, end: 14, dm: true, locked: true, training: true, note: "Online manager training - not floor coverage" },
+            { name: "ANGELA.J 5650", start: 4, end: 12.5 },
+            { name: "ANJALI.J 3450", start: 8.5, end: 15.25 },
+            { name: "RINKU.R 1853", start: 15.5, end: 22 },
+            { name: "CAITLYN.R 1787", start: 9.5, end: 18 },
+            { name: "HAYDEN.S 4020", start: 12.5, end: 16.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 10.5, end: 15 },
+            { name: "TRISHA.T 2786", start: 16, end: 22 },
+            { name: "OLITHEA.T 7355", start: 4.5, end: 13 }
+          ]
+        },
+        {
+          date: "Thursday, 27 August 2026 · OMNI FOM",
+          employees: [
+            { name: "MADISON.A 9303", start: 14, end: 21.5 },
+            { name: "GABRIELLE.F 9750", start: 6, end: 14.5 },
+            { name: "SAVANNAH.H 0889", start: 5, end: 14, dm: true, locked: true, training: true, note: "Online manager training - not floor coverage" },
+            { name: "ANGELA.J 5650", start: 4, end: 12.5 },
+            { name: "HARMANPREET.K 2088", start: 10.5, end: 15 },
+            { name: "ALLIE.P 4990", start: 13.5, end: 19.25 },
+            { name: "CAITLYN.R 1787", start: 8, end: 16.5 },
+            { name: "KEITH.S 8836", start: 9, end: 15.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 12, end: 20.5 },
+            { name: "TRISHA.T 2786", start: 16, end: 22 },
+            { name: "OLITHEA.T 7355", start: 4.5, end: 13 },
+            { name: "DAWN.W 5708", start: 5, end: 13.5 }
+          ]
+        },
+        {
+          date: "Friday, 28 August 2026 · OMNI FOM",
+          employees: [
+            { name: "GABRIELLE.F 9750", start: 7, end: 15.5 },
+            { name: "LIAM.F 7047", start: 11, end: 17.5 },
+            { name: "CHEYANNE.H 3503", start: 8.5, end: 17, dm: true },
+            { name: "SAVANNAH.H 0889", start: 5, end: 14, dm: true, locked: true, training: true, note: "Online manager training - not floor coverage" },
+            { name: "ANGELA.J 5650", start: 4, end: 12.5 },
+            { name: "HARMANPREET.K 2088", start: 12, end: 19.75 },
+            { name: "ALLIE.P 4990", start: 14, end: 18.75 },
+            { name: "CAITLYN.R 1787", start: 9.5, end: 18 },
+            { name: "KEITH.S 8836", start: 15.5, end: 22 },
+            { name: "HAYDEN.S 4020", start: 15, end: 21.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 6, end: 10 },
+            { name: "OLITHEA.T 7355", start: 5, end: 13.5 },
+            { name: "DAWN.W 5708", start: 4, end: 12.5 }
+          ]
+        }
+      ]
+    };
+
+    const payload = btoa(JSON.stringify(schedule))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    location.replace(`./index.html#d=${payload}`);
+  </script>
+</head>
+<body>
+  <p>Loading the week of 22 August 2026 into the <a href="./">Schedule dashboard</a>…</p>
+</body>
+</html>

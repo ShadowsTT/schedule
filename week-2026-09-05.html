@@ -1,0 +1,177 @@
+<!doctype html>
+<!--
+  Week of Sat 5 Sep 2026 (OMNI FOM), transcribed from
+  /home/frost/Downloads/Schedule Editor.pdf (printed 2026-08-15 11:40).
+
+  This is a NEW week, not a re-export of 29 Aug - 4 Sep.
+
+  demandHours are deliberately absent: the Schedule Editor print does not carry
+  them, they come from the editor's on-screen header. Until they are filled in,
+  the week budget and the hour targets have nothing to aim at. Add them per day
+  in the dashboard, or say the word and they can be baked in here.
+
+  Notes on the export:
+  - GABRIELLE.F 9750 reports 30.50h but only 22.50h of shifts are printed for
+    her - an 8.00h shift is missing from the printout, the same way it was in
+    the 29 Aug export. Only printed shifts are transcribed.
+  - Nine part-timers report exactly 27.00h, which is a contract figure rather
+    than the sum of their shifts; their printed shifts come to 27.25h. The
+    reportedTotals below are what the editor states.
+  - ROBBIN.E 3659 and HANY.W 0757 do not appear - consistent with both having
+    resigned.
+  - The export ignores the dashboard's standing rules (mid shifts, clock-in
+    windows). Run the optimizer after loading to bring starts into line.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Load week · 5 Sep 2026</title>
+  <script>
+    const schedule = {
+      reportedTotals: {
+        "9303":27, "1256":14.5, "9750":30.5, "6428":20.75, "7047":27, "3503":37.5, "0889":15, "5650":30, "6547":27, "3450":27, "2088":27, "8609":13, "2226":15, "4990":27, "1853":17.25, "1787":37.5, "8836":27, "4020":27, "9488":27, "2786":26.75, "7355":37.5, "5708":37.5
+      },
+      days: [
+{
+          date: "Saturday, 5 September 2026 · OMNI FOM",
+          employees: [
+            { name: "DAWN.W 5708", start: 4.5, end: 13 },
+            { name: "COLIN.F 6428", start: 5.25, end: 12 },
+            { name: "ALLIE.P 4990", start: 6.5, end: 10.5 },
+            { name: "RINKU.R 1853", start: 7, end: 13.5 },
+            { name: "AUSTIN.B 1256", start: 7, end: 15.25 },
+            { name: "KEITH.S 8836", start: 7.75, end: 12 },
+            { name: "HARMANPREET.K 2088", start: 11, end: 16.5 },
+            { name: "CHRISTINA.M 8609", start: 11.75, end: 18.25 },
+            { name: "ANNIKA.N 2226", start: 13.5, end: 22 },
+            { name: "CHEYANNE.H 3503", start: 13.5, end: 22, dm: true },
+            { name: "LIAM.F 7047", start: 14, end: 18.5 },
+            { name: "HAYDEN.S 4020", start: 14, end: 18.75 },
+            { name: "ANJALI.J 3450", start: 14.5, end: 21 },
+            { name: "TRISHA.T 2786", start: 16.5, end: 20.5 }
+          ]
+        },
+        {
+          date: "Sunday, 6 September 2026 · OMNI FOM",
+          employees: [
+            { name: "ANGELA.J 5650", start: 5, end: 13.5 },
+            { name: "DAWN.W 5708", start: 5, end: 13.5 },
+            { name: "CHRISTINA.M 8609", start: 6.5, end: 14.75 },
+            { name: "COLIN.F 6428", start: 6.5, end: 14.75 },
+            { name: "CHEYANNE.H 3503", start: 6.5, end: 15, dm: true },
+            { name: "AUSTIN.B 1256", start: 8, end: 16.25 },
+            { name: "GURSHARANDEEP.S 9488", start: 8.5, end: 15 },
+            { name: "CAITLYN.R 1787", start: 9.5, end: 18 },
+            { name: "RYAN.J 6547", start: 13, end: 18.5 },
+            { name: "HARMANPREET.K 2088", start: 13.25, end: 18 },
+            { name: "ANNIKA.N 2226", start: 13.5, end: 22 },
+            { name: "ALLIE.P 4990", start: 13.75, end: 18 },
+            { name: "HAYDEN.S 4020", start: 14.5, end: 21 },
+            { name: "MADISON.A 9303", start: 14.75, end: 18.75 },
+            { name: "KEITH.S 8836", start: 15.5, end: 22 },
+            { name: "LIAM.F 7047", start: 16.25, end: 20.5 }
+          ]
+        },
+        {
+          date: "Monday, 7 September 2026 · OMNI FOM",
+          employees: [
+            { name: "HARMANPREET.K 2088", start: 4.75, end: 11.25 },
+            { name: "DAWN.W 5708", start: 5, end: 13.5 },
+            { name: "OLITHEA.T 7355", start: 5.5, end: 14 },
+            { name: "GURSHARANDEEP.S 9488", start: 6.5, end: 14.75 },
+            { name: "CAITLYN.R 1787", start: 8.5, end: 17 },
+            { name: "ANJALI.J 3450", start: 9.75, end: 16.25 },
+            { name: "RYAN.J 6547", start: 11.75, end: 20.25 },
+            { name: "HAYDEN.S 4020", start: 13.25, end: 17.75 },
+            { name: "CHEYANNE.H 3503", start: 13.5, end: 22, dm: true },
+            { name: "LIAM.F 7047", start: 13.75, end: 22 },
+            { name: "ALLIE.P 4990", start: 14.25, end: 18.25 },
+            { name: "MADISON.A 9303", start: 14.5, end: 19 },
+            { name: "TRISHA.T 2786", start: 14.5, end: 21 },
+            { name: "KEITH.S 8836", start: 15.5, end: 19.75 }
+          ]
+        },
+        {
+          date: "Tuesday, 8 September 2026 · OMNI FOM",
+          employees: [
+            { name: "OLITHEA.T 7355", start: 4.75, end: 13.25 },
+            { name: "RYAN.J 6547", start: 5.25, end: 11.75 },
+            { name: "GABRIELLE.F 9750", start: 6.5, end: 15 },
+            { name: "RINKU.R 1853", start: 7, end: 13.75 },
+            { name: "HARMANPREET.K 2088", start: 7.75, end: 14.25 },
+            { name: "ANJALI.J 3450", start: 11, end: 15.75 },
+            { name: "SAVANNAH.H 0889", start: 12.5, end: 21, dm: true },
+            { name: "CHEYANNE.H 3503", start: 13.5, end: 22, dm: true },
+            { name: "ALLIE.P 4990", start: 14, end: 20.5 },
+            { name: "HAYDEN.S 4020", start: 14.5, end: 18.5 },
+            { name: "TRISHA.T 2786", start: 14.5, end: 18.75 },
+            { name: "KEITH.S 8836", start: 14.75, end: 19.5 },
+            { name: "MADISON.A 9303", start: 15.5, end: 22 }
+          ]
+        },
+        {
+          date: "Wednesday, 9 September 2026 · OMNI FOM",
+          employees: [
+            { name: "ANGELA.J 5650", start: 4.75, end: 13.25 },
+            { name: "OLITHEA.T 7355", start: 5, end: 13.5 },
+            { name: "GABRIELLE.F 9750", start: 6.5, end: 15 },
+            { name: "RINKU.R 1853", start: 8.25, end: 14 },
+            { name: "ANJALI.J 3450", start: 11, end: 16.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 13, end: 21 },
+            { name: "CAITLYN.R 1787", start: 13.5, end: 22 },
+            { name: "COLIN.F 6428", start: 13.75, end: 22 },
+            { name: "RYAN.J 6547", start: 14, end: 18 },
+            { name: "KEITH.S 8836", start: 14.75, end: 18.75 },
+            { name: "MADISON.A 9303", start: 15.25, end: 19.25 },
+            { name: "TRISHA.T 2786", start: 16.5, end: 20.5 }
+          ]
+        },
+        {
+          date: "Thursday, 10 September 2026 · OMNI FOM",
+          employees: [
+            { name: "OLITHEA.T 7355", start: 4.25, end: 12.75 },
+            { name: "ANGELA.J 5650", start: 4.75, end: 13.25 },
+            { name: "DAWN.W 5708", start: 5.5, end: 14 },
+            { name: "CAITLYN.R 1787", start: 8, end: 16.5 },
+            { name: "ANJALI.J 3450", start: 9.75, end: 16.25 },
+            { name: "RYAN.J 6547", start: 13, end: 17.75 },
+            { name: "LIAM.F 7047", start: 13, end: 18.75 },
+            { name: "KEITH.S 8836", start: 13.5, end: 17.5 },
+            { name: "GURSHARANDEEP.S 9488", start: 14, end: 22 },
+            { name: "HAYDEN.S 4020", start: 14.25, end: 18.25 },
+            { name: "MADISON.A 9303", start: 16.5, end: 20.5 },
+            { name: "TRISHA.T 2786", start: 17, end: 21 },
+            { name: "ALLIE.P 4990", start: 17.75, end: 22 }
+          ]
+        },
+        {
+          date: "Friday, 11 September 2026 · OMNI FOM",
+          employees: [
+            { name: "DAWN.W 5708", start: 4.75, end: 13.25 },
+            { name: "OLITHEA.T 7355", start: 5, end: 13.5 },
+            { name: "ANGELA.J 5650", start: 5.5, end: 14 },
+            { name: "GABRIELLE.F 9750", start: 6.5, end: 15 },
+            { name: "CHEYANNE.H 3503", start: 8.5, end: 17, dm: true },
+            { name: "CAITLYN.R 1787", start: 9.5, end: 18 },
+            { name: "HAYDEN.S 4020", start: 13, end: 17 },
+            { name: "SAVANNAH.H 0889", start: 13.5, end: 22, dm: true },
+            { name: "ALLIE.P 4990", start: 14, end: 18.75 },
+            { name: "LIAM.F 7047", start: 14, end: 20.5 },
+            { name: "MADISON.A 9303", start: 14.25, end: 19 },
+            { name: "HARMANPREET.K 2088", start: 14.5, end: 21 },
+            { name: "TRISHA.T 2786", start: 17.25, end: 22 }
+          ]
+        }
+      ]
+    };
+
+    const payload = btoa(JSON.stringify(schedule))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+    location.replace(`./index.html#d=${payload}`);
+  </script>
+</head>
+<body>
+  <p>Loading week 5 September 2026 into <a href="./index.html">Schedule dashboard</a>…</p>
+</body>
+</html>
